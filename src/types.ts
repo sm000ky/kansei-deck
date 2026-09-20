@@ -2,6 +2,8 @@ export type VisualizerMode = 'bars' | 'wave' | 'radial' | 'matrix';
 
 export type DeckTheme = 'strelizia' | 'neotokyo' | 'cyberamber' | 'pasteldream';
 
+export type MasterEqProfile = 'flat' | 'lofi' | 'cyber';
+
 export interface SoundChannel {
   id: string;
   name: string;
@@ -19,6 +21,7 @@ export interface SoundPreset {
   jpName: string;
   description: string;
   icon: string;
+  tag: 'Focus' | 'Sleep' | 'Chill' | 'Energy';
   volumes: Record<string, number>; // channel id -> volume (0 to 1)
 }
 

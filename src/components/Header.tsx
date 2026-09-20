@@ -1,5 +1,5 @@
 import React from 'react';
-import { BarChart3, Waves, Disc3, Sparkles, Tv, Palette, Heart } from 'lucide-react';
+import { BarChart3, Waves, Disc3, Sparkles, Tv, Palette, Maximize2 } from 'lucide-react';
 import { VisualizerMode, DeckTheme } from '../types';
 import { audioEngine } from '../audio/AudioEngine';
 
@@ -10,6 +10,7 @@ interface HeaderProps {
   onSelectVisualizerMode: (m: VisualizerMode) => void;
   onSelectTheme: (t: DeckTheme) => void;
   onToggleCrt: () => void;
+  onToggleZen: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -18,55 +19,38 @@ export const Header: React.FC<HeaderProps> = ({
   crtEnabled,
   onSelectVisualizerMode,
   onSelectTheme,
-  onToggleCrt
+  onToggleCrt,
+  onToggleZen
 }) => {
   return (
-    <header className="border-b border-[#242d42] bg-[#0c0f18]/90 backdrop-blur sticky top-0 z-40 px-4 py-3">
-      <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+    <header className="border-b border-[#242d42] bg-[#0b0e17]/95 backdrop-blur sticky top-0 z-40 px-3 md:px-4 py-2.5">
+      <div className="max-w-6xl mx-auto flex items-center justify-between gap-3">
         {/* Brand & Identity */}
-        <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-start">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#ff2a5f] to-[#ff007f] flex items-center justify-center shadow-lg shadow-rose-500/20">
-              <span className="text-white font-mono font-bold text-sm">02</span>
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-[#ff2a5f] to-[#ff007f] flex items-center justify-center shadow-lg shadow-rose-500/25 shrink-0">
+            <span className="text-white font-mono font-bold text-xs">02</span>
+          </div>
+          <div>
+            <div className="flex items-center gap-1.5">
+              <h1 className="font-display font-bold text-base md:text-lg tracking-wider text-white">
+                KANSEI DECK
+              </h1>
+              <span className="font-mono text-[11px] text-slate-500">感性</span>
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="font-display font-bold text-lg tracking-wider text-white">
-                  KANSEI DECK
-                </h1>
-                <span className="font-mono text-xs text-slate-400">感性</span>
-              </div>
-              <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-400">
-                <span className="text-[#ff2a5f] font-semibold">CODE: 002</span>
-                <span>×</span>
-                <span className="text-white font-medium">sm000ky</span>
-                <span className="text-slate-600">•</span>
-                <span className="text-emerald-400">DAY 6</span>
-              </div>
+            <div className="flex items-center gap-1.5 text-[9px] font-mono text-slate-400">
+              <span className="text-[#ff2a5f] font-semibold">002</span>
+              <span>×</span>
+              <span className="text-white font-medium">sm000ky</span>
+              <span className="text-slate-600">•</span>
+              <span className="text-emerald-400 font-semibold">DAY 6</span>
             </div>
           </div>
-
-          {/* CRT toggle on mobile */}
-          <button
-            onClick={() => {
-              audioEngine.playClick();
-              onToggleCrt();
-            }}
-            className={`p-2 rounded-xl border md:hidden transition-all ${
-              crtEnabled
-                ? 'bg-emerald-950/60 border-emerald-500 text-emerald-400'
-                : 'bg-[#161b29] border-[#242d42] text-slate-400'
-            }`}
-            title="Toggle CRT Scanline Effect"
-          >
-            <Tv className="w-4 h-4" />
-          </button>
         </div>
 
-        {/* Controls: Visualizer Modes + Themes + CRT */}
-        <div className="flex items-center flex-wrap gap-2 w-full md:w-auto justify-end">
+        {/* Controls: Visualizer Modes + Themes + CRT + Zen */}
+        <div className="flex items-center gap-1.5 md:gap-2">
           {/* Visualizer Mode Switcher */}
-          <div className="flex items-center p-1 bg-[#10141e] border border-[#242d42] rounded-xl">
+          <div className="flex items-center p-0.5 bg-[#10141e] border border-[#242d42] rounded-xl">
             {(
               [
                 { id: 'bars', icon: BarChart3, title: 'Spectrum Bars' },
@@ -84,24 +68,24 @@ export const Header: React.FC<HeaderProps> = ({
                 title={title}
                 className={`p-1.5 rounded-lg transition-all ${
                   visualizerMode === id
-                    ? 'bg-[#1e2638] text-white shadow'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-[#1f273b] text-white shadow'
+                    : 'text-slate-500 hover:text-slate-200'
                 }`}
               >
-                <Icon className="w-4 h-4" />
+                <Icon className="w-3.5 h-3.5" />
               </button>
             ))}
           </div>
 
           {/* Theme Selector */}
           <div className="flex items-center p-1 bg-[#10141e] border border-[#242d42] rounded-xl gap-1">
-            <Palette className="w-3.5 h-3.5 text-slate-500 ml-1.5 mr-0.5" />
+            <Palette className="w-3 h-3 text-slate-500 ml-1 mr-0.5" />
             {(
               [
-                { id: 'strelizia', name: 'Strelizia', color: '#ff2a5f' },
-                { id: 'neotokyo', name: 'Neo Tokyo', color: '#00f0ff' },
-                { id: 'cyberamber', name: 'Amber', color: '#ffb703' },
-                { id: 'pasteldream', name: 'Pastel', color: '#c084fc' }
+                { id: 'strelizia', name: 'Strelizia Red', color: '#ff2a5f' },
+                { id: 'neotokyo', name: 'Neo Tokyo Cyan', color: '#00f0ff' },
+                { id: 'cyberamber', name: 'Amber Gold', color: '#ffb703' },
+                { id: 'pasteldream', name: 'Pastel Lavender', color: '#c084fc' }
               ] as const
             ).map(({ id, name, color }) => (
               <button
@@ -110,29 +94,43 @@ export const Header: React.FC<HeaderProps> = ({
                   audioEngine.playClick();
                   onSelectTheme(id);
                 }}
-                title={`Theme: ${name}`}
-                className={`w-5 h-5 rounded-full transition-transform ${
-                  theme === id ? 'scale-125 ring-2 ring-white shadow-lg' : 'opacity-70 hover:opacity-100'
+                title={name}
+                className={`w-4 h-4 rounded-full transition-transform ${
+                  theme === id ? 'scale-125 ring-2 ring-white shadow' : 'opacity-60 hover:opacity-100'
                 }`}
                 style={{ backgroundColor: color }}
               />
             ))}
           </div>
 
-          {/* CRT scanlines toggle (Desktop) */}
+          {/* CRT Scanline Toggle */}
           <button
             onClick={() => {
               audioEngine.playClick();
               onToggleCrt();
             }}
-            className={`hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border font-mono text-xs transition-all ${
+            className={`p-1.5 md:px-2 md:py-1 rounded-xl border font-mono text-xs transition-all flex items-center gap-1 ${
               crtEnabled
-                ? 'bg-emerald-950/60 border-emerald-500 text-emerald-400 shadow-sm shadow-emerald-500/20'
-                : 'bg-[#10141e] border-[#242d42] text-slate-400 hover:text-slate-200'
+                ? 'bg-emerald-950/60 border-emerald-500 text-emerald-400'
+                : 'bg-[#10141e] border-[#242d42] text-slate-500 hover:text-slate-300'
             }`}
+            title="Toggle CRT Scanline Overlay"
           >
             <Tv className="w-3.5 h-3.5" />
-            <span>CRT {crtEnabled ? 'ON' : 'OFF'}</span>
+            <span className="hidden md:inline text-[10px]">CRT</span>
+          </button>
+
+          {/* Zen Fullscreen Mode */}
+          <button
+            onClick={() => {
+              audioEngine.playClick();
+              onToggleZen();
+            }}
+            className="p-1.5 md:px-2 md:py-1 rounded-xl bg-[#10141e] border border-[#242d42] text-slate-400 hover:text-white transition-all flex items-center gap-1"
+            title="Immersive Zen Mode"
+          >
+            <Maximize2 className="w-3.5 h-3.5 text-[#00f0ff]" />
+            <span className="hidden md:inline text-[10px] font-mono">ZEN</span>
           </button>
         </div>
       </div>
