@@ -1,5 +1,5 @@
 import React from 'react';
-import { BarChart3, Waves, Disc3, Sparkles, Tv, Palette, Maximize2 } from 'lucide-react';
+import { BarChart3, Waves, Disc3, Sparkles, Tv, Palette, Maximize2, Play, Pause } from 'lucide-react';
 import { VisualizerMode, DeckTheme } from '../types';
 import { audioEngine } from '../audio/AudioEngine';
 
@@ -7,25 +7,29 @@ interface HeaderProps {
   visualizerMode: VisualizerMode;
   theme: DeckTheme;
   crtEnabled: boolean;
+  isPlaying: boolean;
   onSelectVisualizerMode: (m: VisualizerMode) => void;
   onSelectTheme: (t: DeckTheme) => void;
   onToggleCrt: () => void;
   onToggleZen: () => void;
+  onTogglePlayback: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   visualizerMode,
   theme,
   crtEnabled,
+  isPlaying,
   onSelectVisualizerMode,
   onSelectTheme,
   onToggleCrt,
-  onToggleZen
+  onToggleZen,
+  onTogglePlayback
 }) => {
   return (
     <header className="border-b border-[#242d42] bg-[#0b0e17]/95 backdrop-blur sticky top-0 z-40 px-3 md:px-4 py-2.5">
       <div className="max-w-6xl mx-auto flex items-center justify-between gap-3">
-        {/* Brand & Identity */}
+        {/* Brand & Identity (Clean, no Day labels) */}
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-[#ff2a5f] to-[#ff007f] flex items-center justify-center shadow-lg shadow-rose-500/25 shrink-0">
             <span className="text-white font-mono font-bold text-xs">02</span>
@@ -37,18 +41,29 @@ export const Header: React.FC<HeaderProps> = ({
               </h1>
               <span className="font-mono text-[11px] text-slate-500">感性</span>
             </div>
-            <div className="flex items-center gap-1.5 text-[9px] font-mono text-slate-400">
-              <span className="text-[#ff2a5f] font-semibold">002</span>
+            <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-400">
+              <span className="text-[#ff2a5f] font-semibold">CODE: 002</span>
               <span>×</span>
               <span className="text-white font-medium">sm000ky</span>
-              <span className="text-slate-600">•</span>
-              <span className="text-emerald-400 font-semibold">DAY 6</span>
             </div>
           </div>
         </div>
 
-        {/* Controls: Visualizer Modes + Themes + CRT + Zen */}
+        {/* Controls: Playback + Visualizer Modes + Themes + CRT + Zen */}
         <div className="flex items-center gap-1.5 md:gap-2">
+          {/* Quick Play/Pause Button */}
+          <button
+            onClick={onTogglePlayback}
+            className={`px-2.5 py-1 rounded-xl border font-mono text-xs flex items-center gap-1.5 transition-all active:scale-95 ${
+              isPlaying
+                ? 'bg-emerald-950/70 border-emerald-500 text-emerald-400 shadow-sm shadow-emerald-500/20'
+                : 'bg-[#121624] border-[#242d42] text-slate-400 hover:text-white'
+            }`}
+          >
+            {isPlaying ? <Pause className="w-3 h-3 fill-current" /> : <Play className="w-3 h-3 fill-current" />}
+            <span className="hidden sm:inline text-[11px]">{isPlaying ? 'PLAYING' : 'PAUSED'}</span>
+          </button>
+
           {/* Visualizer Mode Switcher */}
           <div className="flex items-center p-0.5 bg-[#10141e] border border-[#242d42] rounded-xl">
             {(
@@ -120,7 +135,7 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="hidden md:inline text-[10px]">CRT</span>
           </button>
 
-          {/* Zen Fullscreen Mode */}
+          {/* Zen Mode */}
           <button
             onClick={() => {
               audioEngine.playClick();

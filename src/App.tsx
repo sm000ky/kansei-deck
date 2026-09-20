@@ -17,6 +17,9 @@ export const App: React.FC = () => {
   const [isCompactVisualizer, setIsCompactVisualizer] = useState<boolean>(false);
   const [isZenMode, setIsZenMode] = useState<boolean>(false);
 
+  // Master Deck Playback State (Controls both Audio & Focus HUD)
+  const [isPlaybackActive, setIsPlaybackActive] = useState<boolean>(false);
+
   // Audio Channels state
   const [channels, setChannels] = useState<SoundChannel[]>(INITIAL_CHANNELS);
   const [masterVolume, setMasterVolume] = useState<number>(0.8);
@@ -28,24 +31,35 @@ export const App: React.FC = () => {
   // Pre-solo saved state
   const preSoloState = useRef<SoundChannel[] | null>(null);
 
-  const [isAudioStarted, setIsAudioStarted] = useState<boolean>(false);
+  // Initialize and engage audio engine
+  const ensureAudioStarted = async (forcePlay = false) => {
+    await audioEngine.init();
+    channels.forEach((ch) => {
+      audioEngine.setChannelVolume(ch.id, ch.volume, ch.isMuted);
+    });
+    audioEngine.setMasterVolume(isMasterMuted ? 0 : masterVolume);
+    audioEngine.setMasterProfile(masterProfile);
 
-  // Lazy initialize audio engine
-  const ensureAudioStarted = async () => {
-    if (!isAudioStarted) {
-      await audioEngine.init();
-      setIsAudioStarted(true);
-      channels.forEach((ch) => {
-        audioEngine.setChannelVolume(ch.id, ch.volume, ch.isMuted);
-      });
-      audioEngine.setMasterVolume(isMasterMuted ? 0 : masterVolume);
-      audioEngine.setMasterProfile(masterProfile);
+    if (forcePlay || !isPlaybackActive) {
+      await audioEngine.setPlayback(true);
+      setIsPlaybackActive(true);
+    }
+  };
+
+  // Master Playback Toggle (Engage Deck / Pause Deck)
+  const handleTogglePlayback = async () => {
+    audioEngine.playClick();
+    if (isPlaybackActive) {
+      await audioEngine.setPlayback(false);
+      setIsPlaybackActive(false);
+    } else {
+      await ensureAudioStarted(true);
     }
   };
 
   // Channel Volume Change
   const handleChannelVolumeChange = async (id: string, vol: number) => {
-    await ensureAudioStarted();
+    await ensureAudioStarted(true);
     setActivePresetId(null);
     setChannels((prev) =>
       prev.map((ch) => {
@@ -61,7 +75,7 @@ export const App: React.FC = () => {
 
   // Toggle Channel Mute
   const handleToggleChannelMute = async (id: string) => {
-    await ensureAudioStarted();
+    await ensureAudioStarted(true);
     setActivePresetId(null);
     setChannels((prev) =>
       prev.map((ch) => {
@@ -77,7 +91,7 @@ export const App: React.FC = () => {
 
   // Solo Channel Handler
   const handleSoloChannel = async (id: string) => {
-    await ensureAudioStarted();
+    await ensureAudioStarted(true);
     setActivePresetId(null);
 
     if (soloChannelId === id) {
@@ -131,7 +145,7 @@ export const App: React.FC = () => {
 
   // Select Preset
   const handleSelectPreset = async (preset: SoundPreset) => {
-    await ensureAudioStarted();
+    await ensureAudioStarted(true);
     setActivePresetId(preset.id);
     setSoloChannelId(null);
     preSoloState.current = null;
@@ -152,7 +166,7 @@ export const App: React.FC = () => {
 
   // Randomize Mix
   const handleRandomizeMix = async () => {
-    await ensureAudioStarted();
+    await ensureAudioStarted(true);
     setActivePresetId(null);
     setSoloChannelId(null);
     preSoloState.current = null;
@@ -190,10 +204,12 @@ export const App: React.FC = () => {
   // Global Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if typing in an input
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
-      if (e.key === 'm' || e.key === 'M') {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        handleTogglePlayback();
+      } else if (e.key === 'm' || e.key === 'M') {
         handleToggleMasterMute();
       } else if (e.key === 'z' || e.key === 'Z') {
         setIsZenMode((prev) => !prev);
@@ -212,10 +228,7 @@ export const App: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isMasterMuted, masterVolume]);
-
-  const isPlaying =
-    isAudioStarted && !isMasterMuted && channels.some((ch) => !ch.isMuted && ch.volume > 0);
+  }, [isPlaybackActive, isMasterMuted, masterVolume]);
 
   const activePreset = PRESETS.find((p) => p.id === activePresetId);
 
@@ -225,24 +238,30 @@ export const App: React.FC = () => {
         visualizerMode={visualizerMode}
         theme={theme}
         crtEnabled={crtEnabled}
+        isPlaying={isPlaybackActive}
         onSelectVisualizerMode={setVisualizerMode}
         onSelectTheme={setTheme}
         onToggleCrt={() => setCrtEnabled(!crtEnabled)}
         onToggleZen={() => setIsZenMode(true)}
+        onTogglePlayback={handleTogglePlayback}
       />
 
-      <main className="flex-1 max-w-6xl w-full mx-auto px-3 md:px-4 py-4 flex flex-col gap-4">
+      <main className="flex-1 max-w-6xl w-full mx-auto px-3 md:px-4 py-4 flex flex-col gap-3.5">
         {/* Visualizer Canvas */}
         <VisualizerCanvas
           mode={visualizerMode}
           theme={theme}
-          isPlaying={isPlaying}
+          isPlaying={isPlaybackActive}
           isCompact={isCompactVisualizer}
           onToggleCompact={() => setIsCompactVisualizer(!isCompactVisualizer)}
         />
 
-        {/* Focus HUD */}
-        <FocusHUD theme={theme} />
+        {/* Focus HUD (Engage / Pause Deck) */}
+        <FocusHUD
+          theme={theme}
+          isActive={isPlaybackActive}
+          onToggleActive={handleTogglePlayback}
+        />
 
         {/* 12 Atmospheric Presets */}
         <PresetSelector
@@ -272,12 +291,12 @@ export const App: React.FC = () => {
 
       <Footer />
 
-      {/* Fullscreen Zen Mode Overlay */}
+      {/* Fullscreen Zen Mode */}
       {isZenMode && (
         <ZenMode
           theme={theme}
           visualizerMode={visualizerMode}
-          isPlaying={isPlaying}
+          isPlaying={isPlaybackActive}
           activePresetName={activePreset ? `${activePreset.name} (${activePreset.jpName})` : 'Custom Mix'}
           onExit={() => setIsZenMode(false)}
         />

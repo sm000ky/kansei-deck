@@ -1,5 +1,5 @@
-// Pure Client-Side Procedural Web Audio Engine v2.0
-// 100% Real-Time Synthesized — Zero External Samples / Anti-LMK Safe
+// Pure Client-Side Procedural Web Audio Engine v3.0
+// 100% Real-Time Synthesized — Rock-solid, Audible, Luscious Textures
 // sm000ky × Zero Two // KANSEI DECK
 
 import { MasterEqProfile } from '../types';
@@ -10,23 +10,24 @@ class AudioEngine {
   private masterEqLow: BiquadFilterNode | null = null;
   private masterEqHigh: BiquadFilterNode | null = null;
   private analyser: AnalyserNode | null = null;
+
   private isInitialized = false;
+  private isPlaybackActive = false; // Master Play/Pause state
 
-  // Channel Gain Nodes
+  // Channel Gain Nodes & Master Channel Volume Store
   private channelGains: Map<string, GainNode> = new Map();
+  private channelVolumes: Map<string, number> = new Map();
+  private channelMutes: Map<string, boolean> = new Map();
 
-  // Active Generators State & Intervals
+  // Active Generators
   private activeGenerators: Map<string, any> = new Map();
 
   // Master Volume & Profile
   private masterVol = 0.8;
   private currentProfile: MasterEqProfile = 'flat';
 
-  // Binaural Beat Frequency (Hz)
-  private binauralBeatFreq = 10.0; // default 10Hz Alpha
-
   constructor() {
-    // Lazy initialization
+    // Lazy init on first gesture
   }
 
   public async init(): Promise<void> {
@@ -40,12 +41,12 @@ class AudioEngine {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
     this.ctx = new AudioContextClass();
 
-    // Master Analyser
+    // 1. Master Analyser
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 256;
     this.analyser.smoothingTimeConstant = 0.82;
 
-    // Master EQ Filters (Low & High)
+    // 2. Master EQ Filters (Low Shelf & High Pass/Shelf)
     this.masterEqLow = this.ctx.createBiquadFilter();
     this.masterEqLow.type = 'lowshelf';
     this.masterEqLow.frequency.setValueAtTime(250, this.ctx.currentTime);
@@ -56,7 +57,7 @@ class AudioEngine {
     this.masterEqHigh.frequency.setValueAtTime(20000, this.ctx.currentTime);
     this.masterEqHigh.Q.setValueAtTime(0.7, this.ctx.currentTime);
 
-    // Master Gain
+    // 3. Master Gain
     this.masterGain = this.ctx.createGain();
     this.masterGain.gain.setValueAtTime(this.masterVol, this.ctx.currentTime);
 
@@ -67,15 +68,55 @@ class AudioEngine {
     this.analyser.connect(this.ctx.destination);
 
     this.isInitialized = true;
+    this.isPlaybackActive = true;
+  }
+
+  public async resumeContext(): Promise<void> {
+    if (!this.ctx) {
+      await this.init();
+    } else if (this.ctx.state === 'suspended') {
+      await this.ctx.resume();
+    }
   }
 
   public getAnalyser(): AnalyserNode | null {
     return this.analyser;
   }
 
+  // Master Play / Pause Control
+  public async setPlayback(active: boolean): Promise<void> {
+    await this.resumeContext();
+    this.isPlaybackActive = active;
+
+    if (!this.masterGain || !this.ctx) return;
+    const now = this.ctx.currentTime;
+
+    if (active) {
+      this.masterGain.gain.cancelScheduledValues(now);
+      this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, now);
+      this.masterGain.gain.linearRampToValueAtTime(this.masterVol, now + 0.08);
+
+      // Ensure active channels are running
+      this.channelVolumes.forEach((vol, id) => {
+        const isMuted = this.channelMutes.get(id) || false;
+        if (vol > 0 && !isMuted && !this.activeGenerators.has(id)) {
+          this.startGenerator(id);
+        }
+      });
+    } else {
+      this.masterGain.gain.cancelScheduledValues(now);
+      this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, now);
+      this.masterGain.gain.linearRampToValueAtTime(0, now + 0.08);
+    }
+  }
+
+  public isPlaying(): boolean {
+    return this.isPlaybackActive && this.ctx?.state === 'running';
+  }
+
   public setMasterVolume(val: number): void {
     this.masterVol = Math.max(0, Math.min(1, val));
-    if (this.masterGain && this.ctx) {
+    if (this.masterGain && this.ctx && this.isPlaybackActive) {
       this.masterGain.gain.setTargetAtTime(this.masterVol, this.ctx.currentTime, 0.04);
     }
   }
@@ -90,15 +131,12 @@ class AudioEngine {
 
     const now = this.ctx.currentTime;
     if (profile === 'lofi') {
-      // Warm lo-fi: cut harsh highs above 2800Hz, warm boost at 200Hz
       this.masterEqHigh.frequency.setTargetAtTime(3200, now, 0.05);
       this.masterEqLow.gain.setTargetAtTime(3.5, now, 0.05);
     } else if (profile === 'cyber') {
-      // Crisp cyber: open highs with high shelf clarity, tight bass
       this.masterEqHigh.frequency.setTargetAtTime(18000, now, 0.05);
       this.masterEqLow.gain.setTargetAtTime(-1.5, now, 0.05);
     } else {
-      // Flat bypass
       this.masterEqHigh.frequency.setTargetAtTime(20000, now, 0.05);
       this.masterEqLow.gain.setTargetAtTime(0, now, 0.05);
     }
@@ -108,15 +146,17 @@ class AudioEngine {
     return this.currentProfile;
   }
 
-  // Set individual channel volume with smooth ramping
+  // Set Channel Volume
   public setChannelVolume(channelId: string, volume: number, isMuted: boolean): void {
+    this.channelVolumes.set(channelId, volume);
+    this.channelMutes.set(channelId, isMuted);
+
     if (!this.isInitialized || !this.ctx) return;
     const gainNode = this.getOrCreateChannelGain(channelId);
     const targetVol = isMuted ? 0 : Math.max(0, Math.min(1, volume));
 
     gainNode.gain.setTargetAtTime(targetVol, this.ctx.currentTime, 0.04);
 
-    // Auto-start generator if not yet active
     if (targetVol > 0 && !this.activeGenerators.has(channelId)) {
       this.startGenerator(channelId);
     }
@@ -133,8 +173,8 @@ class AudioEngine {
     return this.channelGains.get(channelId)!;
   }
 
-  // Helper to create a seamless looping pink noise buffer with crossfaded edges
-  private createCrossfadedPinkNoise(seconds = 5): AudioBuffer {
+  // Helper to generate seamless looping pink noise buffer
+  private createCrossfadedPinkNoise(seconds = 6): AudioBuffer {
     if (!this.ctx) throw new Error('No context');
     const sampleRate = this.ctx.sampleRate;
     const bufferSize = sampleRate * seconds;
@@ -150,17 +190,16 @@ class AudioEngine {
       b3 = 0.86650 * b3 + white * 0.3104856;
       b4 = 0.55000 * b4 + white * 0.5329522;
       b5 = -0.7616 * b5 - white * 0.0168980;
-      data[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.06;
+      data[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.25; // Clean, healthy amplitude
       b6 = white * 0.115926;
     }
 
-    // Apply smooth sine crossfade on the first and last 250ms to guarantee zero clicks on loop
-    const fadeLen = Math.floor(sampleRate * 0.25);
+    // 300ms sine crossfade at boundaries for zero click on loop
+    const fadeLen = Math.floor(sampleRate * 0.3);
     for (let i = 0; i < fadeLen; i++) {
       const t = i / fadeLen;
       const fadeIn = Math.sin((t * Math.PI) / 2);
       const fadeOut = Math.cos((t * Math.PI) / 2);
-      // Blend ends
       const blended = data[i] * fadeIn + data[bufferSize - fadeLen + i] * fadeOut;
       data[i] = blended;
       data[bufferSize - fadeLen + i] = blended;
@@ -169,7 +208,7 @@ class AudioEngine {
     return buffer;
   }
 
-  // --- PROCEDURAL GENERATORS ---
+  // --- PROCEDURAL SOUND GENERATORS ---
 
   public startGenerator(channelId: string): void {
     if (!this.ctx || this.activeGenerators.has(channelId)) return;
@@ -188,74 +227,78 @@ class AudioEngine {
     }
   }
 
-  // 1. TOKYO RAIN
+  // 1. TOKYO RAIN (雨音)
   private initRainGenerator(): void {
     if (!this.ctx) return;
     const targetGain = this.getOrCreateChannelGain('rain');
 
-    const buffer = this.createCrossfadedPinkNoise(5);
-    const noiseSource = this.ctx.createBufferSource();
-    noiseSource.buffer = buffer;
-    noiseSource.loop = true;
+    const buffer = this.createCrossfadedPinkNoise(6);
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = buffer;
+    noise.loop = true;
 
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(850, this.ctx.currentTime);
-    filter.Q.setValueAtTime(1.2, this.ctx.currentTime);
+    filter.frequency.setValueAtTime(1200, this.ctx.currentTime);
+    filter.Q.setValueAtTime(1.0, this.ctx.currentTime);
 
-    noiseSource.connect(filter);
+    noise.connect(filter);
     filter.connect(targetGain);
-    noiseSource.start();
+    noise.start();
 
-    // Randomized droplet pings
+    // Raindrop blips
     const dropletInterval = window.setInterval(() => {
-      if (!this.ctx || targetGain.gain.value <= 0.001) return;
-      if (Math.random() > 0.4) {
-        this.triggerRaindrop(targetGain);
+      if (!this.ctx) return;
+      const isMuted = this.channelMutes.get('rain');
+      const vol = this.channelVolumes.get('rain') || 0;
+      if (isMuted || vol <= 0.01) return;
+
+      if (Math.random() > 0.35) {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        const freq = 1200 + Math.random() * 1600;
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(freq * 0.7, this.ctx.currentTime + 0.04);
+
+        gain.gain.setValueAtTime(0.04 + Math.random() * 0.04, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + 0.045);
+
+        osc.connect(gain);
+        gain.connect(targetGain);
+
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.05);
       }
-    }, 180);
+    }, 150);
 
-    this.activeGenerators.set('rain', { noiseSource, dropletInterval });
+    this.activeGenerators.set('rain', { noise, dropletInterval });
   }
 
-  private triggerRaindrop(destination: GainNode): void {
-    if (!this.ctx) return;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-
-    const freq = 1200 + Math.random() * 1400;
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(freq * 0.7, this.ctx.currentTime + 0.04);
-
-    gain.gain.setValueAtTime(0.018 + Math.random() * 0.02, this.ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + 0.045);
-
-    osc.connect(gain);
-    gain.connect(destination);
-
-    osc.start();
-    osc.stop(this.ctx.currentTime + 0.05);
-  }
-
-  // 2. VINYL CRACKLE
+  // 2. VINYL CRACKLE (レコード)
   private initVinylGenerator(): void {
     if (!this.ctx) return;
     const targetGain = this.getOrCreateChannelGain('vinyl');
 
+    // Analog turntable warm rumble (40Hz)
     const rumble = this.ctx.createOscillator();
     rumble.type = 'triangle';
-    rumble.frequency.setValueAtTime(32, this.ctx.currentTime);
+    rumble.frequency.setValueAtTime(38, this.ctx.currentTime);
 
     const rumbleGain = this.ctx.createGain();
-    rumbleGain.gain.setValueAtTime(0.04, this.ctx.currentTime);
+    rumbleGain.gain.setValueAtTime(0.08, this.ctx.currentTime);
 
     rumble.connect(rumbleGain);
     rumbleGain.connect(targetGain);
     rumble.start();
 
+    // Dust pops
     const crackleInterval = window.setInterval(() => {
-      if (!this.ctx || targetGain.gain.value <= 0.001) return;
+      if (!this.ctx) return;
+      const isMuted = this.channelMutes.get('vinyl');
+      const vol = this.channelVolumes.get('vinyl') || 0;
+      if (isMuted || vol <= 0.01) return;
 
       const count = Math.floor(Math.random() * 3);
       for (let c = 0; c < count; c++) {
@@ -264,14 +307,14 @@ class AudioEngine {
         const popGain = this.ctx.createGain();
 
         popOsc.type = 'square';
-        popOsc.frequency.setValueAtTime(300 + Math.random() * 3500, this.ctx.currentTime);
+        popOsc.frequency.setValueAtTime(400 + Math.random() * 3000, this.ctx.currentTime);
 
         popFilter.type = 'bandpass';
-        popFilter.frequency.setValueAtTime(1500 + Math.random() * 2200, this.ctx.currentTime);
-        popFilter.Q.setValueAtTime(3.5, this.ctx.currentTime);
+        popFilter.frequency.setValueAtTime(1800 + Math.random() * 2000, this.ctx.currentTime);
+        popFilter.Q.setValueAtTime(3.0, this.ctx.currentTime);
 
-        const dur = 0.004 + Math.random() * 0.007;
-        popGain.gain.setValueAtTime(0.04 + Math.random() * 0.07, this.ctx.currentTime);
+        const dur = 0.006 + Math.random() * 0.008;
+        popGain.gain.setValueAtTime(0.08 + Math.random() * 0.12, this.ctx.currentTime);
         popGain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + dur);
 
         popOsc.connect(popFilter);
@@ -281,42 +324,43 @@ class AudioEngine {
         popOsc.start();
         popOsc.stop(this.ctx.currentTime + dur);
       }
-    }, 70);
+    }, 75);
 
     this.activeGenerators.set('vinyl', { rumble, crackleInterval });
   }
 
-  // 3. NIGHT WIND & CABIN HUM
+  // 3. NIGHT WIND & CABIN HUM (風と客室)
   private initWindGenerator(): void {
     if (!this.ctx) return;
     const targetGain = this.getOrCreateChannelGain('wind');
 
-    const buffer = this.createCrossfadedPinkNoise(4);
+    const buffer = this.createCrossfadedPinkNoise(5);
     const noise = this.ctx.createBufferSource();
     noise.buffer = buffer;
     noise.loop = true;
 
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(360, this.ctx.currentTime);
-    filter.Q.setValueAtTime(3.2, this.ctx.currentTime);
+    filter.frequency.setValueAtTime(400, this.ctx.currentTime);
+    filter.Q.setValueAtTime(2.5, this.ctx.currentTime);
 
     const lfo = this.ctx.createOscillator();
     lfo.type = 'sine';
-    lfo.frequency.setValueAtTime(0.1, this.ctx.currentTime);
+    lfo.frequency.setValueAtTime(0.12, this.ctx.currentTime);
 
     const lfoGain = this.ctx.createGain();
-    lfoGain.gain.setValueAtTime(200, this.ctx.currentTime);
+    lfoGain.gain.setValueAtTime(220, this.ctx.currentTime);
 
     lfo.connect(lfoGain);
     lfoGain.connect(filter.frequency);
 
+    // 55Hz spacecraft cabin sub-hum
     const hum = this.ctx.createOscillator();
     hum.type = 'sine';
     hum.frequency.setValueAtTime(55, this.ctx.currentTime);
 
     const humGain = this.ctx.createGain();
-    humGain.gain.setValueAtTime(0.07, this.ctx.currentTime);
+    humGain.gain.setValueAtTime(0.15, this.ctx.currentTime);
 
     noise.connect(filter);
     filter.connect(targetGain);
@@ -330,12 +374,12 @@ class AudioEngine {
     this.activeGenerators.set('wind', { noise, lfo, hum });
   }
 
-  // 4. LO-FI RHODES / JAZZ CHORD PROGRESSIONS
+  // 4. LO-FI RHODES / JAZZ CHORD PROGRESSIONS (チルピアノ)
   private initLoFiKeysGenerator(): void {
     if (!this.ctx) return;
     const targetGain = this.getOrCreateChannelGain('keys');
 
-    // 4 Distinct Lo-Fi Chord Progressions
+    // Rich jazzy progressions
     const progressions = [
       // 1. Neo-Tokyo Melancholy: Dmaj9 -> Bm9 -> Gmaj7 -> A7sus4
       [[146.83, 185.0, 220.0, 277.18, 329.63], [123.47, 146.83, 185.0, 220.0, 277.18], [98.0, 123.47, 146.83, 185.0, 246.94], [110.0, 146.83, 164.81, 196.0, 246.94]],
@@ -349,13 +393,17 @@ class AudioEngine {
     let chordIdx = 0;
 
     const playChord = () => {
-      if (!this.ctx || targetGain.gain.value <= 0.001) return;
+      if (!this.ctx) return;
+      const isMuted = this.channelMutes.get('keys');
+      const vol = this.channelVolumes.get('keys') || 0;
+      if (isMuted || vol <= 0.01) return;
+
       const currentProg = progressions[progIdx % progressions.length];
       const notes = currentProg[chordIdx % currentProg.length];
       chordIdx++;
       if (chordIdx % currentProg.length === 0) progIdx++;
 
-      const chordDuration = 4.4;
+      const chordDuration = 4.2;
       const now = this.ctx.currentTime;
 
       notes.forEach((freq, idx) => {
@@ -365,18 +413,17 @@ class AudioEngine {
         const filter = this.ctx.createBiquadFilter();
         const gain = this.ctx.createGain();
 
-        // Dual oscillators for rich Rhodes body
         osc1.type = idx % 2 === 0 ? 'triangle' : 'sine';
         osc1.frequency.setValueAtTime(freq, now);
 
         osc2.type = 'sine';
-        osc2.frequency.setValueAtTime(freq * 1.002, now); // subtle detune chorus
+        osc2.frequency.setValueAtTime(freq * 1.002, now);
 
-        // Tape wow & flutter vibrato
+        // Tape wow vibrato
         const vibrato = this.ctx.createOscillator();
         const vibratoGain = this.ctx.createGain();
         vibrato.frequency.setValueAtTime(4.2 + Math.random() * 0.8, now);
-        vibratoGain.gain.setValueAtTime(0.9, now);
+        vibratoGain.gain.setValueAtTime(1.0, now);
         vibrato.connect(vibratoGain);
         vibratoGain.connect(osc1.frequency);
         vibratoGain.connect(osc2.frequency);
@@ -385,12 +432,12 @@ class AudioEngine {
 
         // Warm 24dB low-pass filter
         filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(750, now);
-        filter.frequency.exponentialRampToValueAtTime(320, now + chordDuration);
+        filter.frequency.setValueAtTime(950, now);
+        filter.frequency.exponentialRampToValueAtTime(380, now + chordDuration);
 
-        // Envelope
+        // Healthy, lush volume envelope
         gain.gain.setValueAtTime(0.0001, now);
-        gain.gain.linearRampToValueAtTime(0.07 / notes.length, now + 0.1);
+        gain.gain.linearRampToValueAtTime(0.22 / notes.length, now + 0.12);
         gain.gain.exponentialRampToValueAtTime(0.0001, now + chordDuration);
 
         osc1.connect(filter);
@@ -406,17 +453,18 @@ class AudioEngine {
     };
 
     playChord();
-    const chordInterval = window.setInterval(playChord, 4600);
+    const chordInterval = window.setInterval(playChord, 4500);
     this.activeGenerators.set('keys', { chordInterval });
   }
 
-  // 5. BINAURAL ALPHA/THETA DRONE
+  // 5. BINAURAL ALPHA DRONE (脳波シンク)
+  // Warm, meditative 216Hz fundamental with 10Hz alpha beat difference
   private initBinauralGenerator(): void {
     if (!this.ctx) return;
     const targetGain = this.getOrCreateChannelGain('binaural');
 
-    const baseFreq = 432;
-    const beat = this.binauralBeatFreq;
+    const baseFreq = 216; // A3, smooth and soothing (not piercing!)
+    const beat = 10.0; // 10Hz Alpha beat
 
     const oscL = this.ctx.createOscillator();
     oscL.type = 'sine';
@@ -438,14 +486,18 @@ class AudioEngine {
     subOsc.frequency.setValueAtTime(108, this.ctx.currentTime);
 
     const subGain = this.ctx.createGain();
-    subGain.gain.setValueAtTime(0.05, this.ctx.currentTime);
+    subGain.gain.setValueAtTime(0.18, this.ctx.currentTime);
+
+    const toneGain = this.ctx.createGain();
+    toneGain.gain.setValueAtTime(0.25, this.ctx.currentTime);
 
     oscL.connect(panL);
-    panL.connect(targetGain);
+    panL.connect(toneGain);
     oscR.connect(panR);
-    panR.connect(targetGain);
+    panR.connect(toneGain);
     subOsc.connect(subGain);
     subGain.connect(targetGain);
+    toneGain.connect(targetGain);
 
     oscL.start();
     oscR.start();
@@ -454,14 +506,17 @@ class AudioEngine {
     this.activeGenerators.set('binaural', { oscL, oscR, subOsc });
   }
 
-  // 6. MECHANICAL CLOCK & METRONOME
+  // 6. MECHANICAL CLOCK & METRONOME (機械時計)
   private initClockGenerator(): void {
     if (!this.ctx) return;
     const targetGain = this.getOrCreateChannelGain('clock');
 
     let isHighTick = false;
     const clockInterval = window.setInterval(() => {
-      if (!this.ctx || targetGain.gain.value <= 0.001) return;
+      if (!this.ctx) return;
+      const isMuted = this.channelMutes.get('clock');
+      const vol = this.channelVolumes.get('clock') || 0;
+      if (isMuted || vol <= 0.01) return;
 
       const now = this.ctx.currentTime;
       const osc = this.ctx.createOscillator();
@@ -473,28 +528,27 @@ class AudioEngine {
 
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(freq, now);
-      osc.frequency.exponentialRampToValueAtTime(120, now + 0.025);
+      osc.frequency.exponentialRampToValueAtTime(120, now + 0.03);
 
       filter.type = 'bandpass';
       filter.frequency.setValueAtTime(freq, now);
       filter.Q.setValueAtTime(2.2, now);
 
-      gain.gain.setValueAtTime(0.055, now);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.025);
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.03);
 
       osc.connect(filter);
       filter.connect(gain);
       gain.connect(targetGain);
 
       osc.start(now);
-      osc.stop(now + 0.03);
+      osc.stop(now + 0.035);
     }, 1000); // 60 BPM
 
     this.activeGenerators.set('clock', { clockInterval });
   }
 
   // 7. OCEAN SURF / WAVES (潮騒)
-  // Low-frequency modulated pink noise swell simulating rolling waves
   private initWavesGenerator(): void {
     if (!this.ctx) return;
     const targetGain = this.getOrCreateChannelGain('waves');
@@ -506,79 +560,63 @@ class AudioEngine {
 
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(450, this.ctx.currentTime);
-    filter.Q.setValueAtTime(2.5, this.ctx.currentTime);
+    filter.frequency.setValueAtTime(650, this.ctx.currentTime);
+    filter.Q.setValueAtTime(2.0, this.ctx.currentTime);
 
-    // Wave swell LFO (slow 0.08Hz swell)
+    // Wave swell LFO
     const swellLfo = this.ctx.createOscillator();
     swellLfo.type = 'sine';
     swellLfo.frequency.setValueAtTime(0.08, this.ctx.currentTime);
 
     const swellGain = this.ctx.createGain();
-    swellGain.gain.setValueAtTime(320, this.ctx.currentTime);
+    swellGain.gain.setValueAtTime(450, this.ctx.currentTime);
 
     swellLfo.connect(swellGain);
     swellGain.connect(filter.frequency);
 
-    // Secondary volume swell
-    const volGain = this.ctx.createGain();
-    volGain.gain.setValueAtTime(0.5, this.ctx.currentTime);
-
-    const volLfo = this.ctx.createOscillator();
-    volLfo.type = 'sine';
-    volLfo.frequency.setValueAtTime(0.08, this.ctx.currentTime);
-
-    const volLfoGain = this.ctx.createGain();
-    volLfoGain.gain.setValueAtTime(0.35, this.ctx.currentTime);
-
-    volLfo.connect(volLfoGain);
-    volLfoGain.connect(volGain.gain);
-
     noise.connect(filter);
-    filter.connect(volGain);
-    volGain.connect(targetGain);
+    filter.connect(targetGain);
 
     noise.start();
     swellLfo.start();
-    volLfo.start();
 
-    this.activeGenerators.set('waves', { noise, swellLfo, volLfo });
+    this.activeGenerators.set('waves', { noise, swellLfo });
   }
 
-  // 8. CAMPFIRE & FIREPLACE (焚き火)
-  // Warm low rumble + sharp snappy wood crackles
+  // 8. CAMPFIRE HEARTH (焚き火)
   private initFireGenerator(): void {
     if (!this.ctx) return;
     const targetGain = this.getOrCreateChannelGain('fire');
 
-    // Fire hearth low rumble
     const rumble = this.ctx.createOscillator();
     rumble.type = 'sine';
     rumble.frequency.setValueAtTime(45, this.ctx.currentTime);
     const rumbleGain = this.ctx.createGain();
-    rumbleGain.gain.setValueAtTime(0.06, this.ctx.currentTime);
+    rumbleGain.gain.setValueAtTime(0.1, this.ctx.currentTime);
     rumble.connect(rumbleGain);
     rumbleGain.connect(targetGain);
     rumble.start();
 
-    // Wood crackle bursts
     const fireInterval = window.setInterval(() => {
-      if (!this.ctx || targetGain.gain.value <= 0.001) return;
+      if (!this.ctx) return;
+      const isMuted = this.channelMutes.get('fire');
+      const vol = this.channelVolumes.get('fire') || 0;
+      if (isMuted || vol <= 0.01) return;
 
-      if (Math.random() > 0.3) {
+      if (Math.random() > 0.25) {
         const popOsc = this.ctx.createOscillator();
         const popFilter = this.ctx.createBiquadFilter();
         const popGain = this.ctx.createGain();
 
         popOsc.type = 'sawtooth';
-        popOsc.frequency.setValueAtTime(600 + Math.random() * 2400, this.ctx.currentTime);
+        popOsc.frequency.setValueAtTime(700 + Math.random() * 2600, this.ctx.currentTime);
 
         popFilter.type = 'bandpass';
-        popFilter.frequency.setValueAtTime(1200 + Math.random() * 1800, this.ctx.currentTime);
-        popFilter.Q.setValueAtTime(4.0, this.ctx.currentTime);
+        popFilter.frequency.setValueAtTime(1400 + Math.random() * 1800, this.ctx.currentTime);
+        popFilter.Q.setValueAtTime(3.5, this.ctx.currentTime);
 
         const dur = 0.015 + Math.random() * 0.03;
-        popGain.gain.setValueAtTime(0.06 + Math.random() * 0.09, this.ctx.currentTime);
+        popGain.gain.setValueAtTime(0.12 + Math.random() * 0.15, this.ctx.currentTime);
         popGain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + dur);
 
         popOsc.connect(popFilter);
@@ -588,13 +626,12 @@ class AudioEngine {
         popOsc.start();
         popOsc.stop(this.ctx.currentTime + dur);
       }
-    }, 90);
+    }, 85);
 
     this.activeGenerators.set('fire', { rumble, fireInterval });
   }
 
-  // 9. CYBER CAFE MURMUR (カフェ)
-  // Diffuse warm ambient murmur + gentle ceramic clinks
+  // 9. CYBER CAFE (電脳喫茶)
   private initCafeGenerator(): void {
     if (!this.ctx) return;
     const targetGain = this.getOrCreateChannelGain('cafe');
@@ -606,17 +643,21 @@ class AudioEngine {
 
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(420, this.ctx.currentTime);
-    filter.Q.setValueAtTime(1.8, this.ctx.currentTime);
+    filter.frequency.setValueAtTime(480, this.ctx.currentTime);
+    filter.Q.setValueAtTime(1.6, this.ctx.currentTime);
 
     noise.connect(filter);
     filter.connect(targetGain);
     noise.start();
 
-    // Ceramic cup/spoon clinks
+    // Ceramic cup clinks
     const clinkInterval = window.setInterval(() => {
-      if (!this.ctx || targetGain.gain.value <= 0.001) return;
-      if (Math.random() > 0.65) {
+      if (!this.ctx) return;
+      const isMuted = this.channelMutes.get('cafe');
+      const vol = this.channelVolumes.get('cafe') || 0;
+      if (isMuted || vol <= 0.01) return;
+
+      if (Math.random() > 0.6) {
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
 
@@ -624,7 +665,7 @@ class AudioEngine {
         osc.type = 'sine';
         osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
 
-        gain.gain.setValueAtTime(0.02 + Math.random() * 0.025, this.ctx.currentTime);
+        gain.gain.setValueAtTime(0.06 + Math.random() * 0.06, this.ctx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + 0.08);
 
         osc.connect(gain);
@@ -633,13 +674,12 @@ class AudioEngine {
         osc.start();
         osc.stop(this.ctx.currentTime + 0.09);
       }
-    }, 600);
+    }, 550);
 
     this.activeGenerators.set('cafe', { noise, clinkInterval });
   }
 
-  // 10. COSMIC AURORA PAD (オーロラ)
-  // Ethereal dual-sine harmonic drone with slow shimmer
+  // 10. COSMIC AURORA (極光)
   private initAuroraGenerator(): void {
     if (!this.ctx) return;
     const targetGain = this.getOrCreateChannelGain('aurora');
@@ -650,26 +690,25 @@ class AudioEngine {
     const gain = this.ctx.createGain();
 
     osc1.type = 'sine';
-    osc1.frequency.setValueAtTime(216, this.ctx.currentTime); // A3 harmonic
+    osc1.frequency.setValueAtTime(216, this.ctx.currentTime);
 
     osc2.type = 'triangle';
-    osc2.frequency.setValueAtTime(324, this.ctx.currentTime); // E4 5th harmonic
+    osc2.frequency.setValueAtTime(324, this.ctx.currentTime);
 
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(800, this.ctx.currentTime);
+    filter.frequency.setValueAtTime(900, this.ctx.currentTime);
 
-    // Shimmer LFO
     const lfo = this.ctx.createOscillator();
     lfo.type = 'sine';
     lfo.frequency.setValueAtTime(0.15, this.ctx.currentTime);
 
     const lfoGain = this.ctx.createGain();
-    lfoGain.gain.setValueAtTime(250, this.ctx.currentTime);
+    lfoGain.gain.setValueAtTime(300, this.ctx.currentTime);
 
     lfo.connect(lfoGain);
     lfoGain.connect(filter.frequency);
 
-    gain.gain.setValueAtTime(0.08, this.ctx.currentTime);
+    gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
 
     osc1.connect(filter);
     osc2.connect(filter);
@@ -685,11 +724,10 @@ class AudioEngine {
 
   // --- SPECIAL FX ---
 
-  // Pomodoro Completion Chime (Pentatonic Bell Arpeggio)
   public playChime(): void {
     if (!this.ctx || !this.masterGain) return;
     const now = this.ctx.currentTime;
-    const freqs = [523.25, 659.25, 783.99, 1046.5, 1318.51]; // C5, E5, G5, C6, E6
+    const freqs = [523.25, 659.25, 783.99, 1046.5, 1318.51];
 
     freqs.forEach((f, idx) => {
       if (!this.ctx || !this.masterGain) return;
@@ -700,7 +738,7 @@ class AudioEngine {
       osc.frequency.setValueAtTime(f, now + idx * 0.1);
 
       gain.gain.setValueAtTime(0.0001, now + idx * 0.1);
-      gain.gain.linearRampToValueAtTime(0.12, now + idx * 0.1 + 0.02);
+      gain.gain.linearRampToValueAtTime(0.15, now + idx * 0.1 + 0.02);
       gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.1 + 1.8);
 
       osc.connect(gain);
@@ -711,7 +749,6 @@ class AudioEngine {
     });
   }
 
-  // UI Click sound
   public playClick(): void {
     if (!this.ctx || !this.masterGain) return;
     const now = this.ctx.currentTime;
@@ -722,7 +759,7 @@ class AudioEngine {
     osc.frequency.setValueAtTime(850, now);
     osc.frequency.exponentialRampToValueAtTime(220, now + 0.015);
 
-    gain.gain.setValueAtTime(0.035, now);
+    gain.gain.setValueAtTime(0.04, now);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.015);
 
     osc.connect(gain);

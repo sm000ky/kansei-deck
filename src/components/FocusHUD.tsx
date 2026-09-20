@@ -6,12 +6,13 @@ import { audioEngine } from '../audio/AudioEngine';
 
 interface FocusHUDProps {
   theme: DeckTheme;
+  isActive: boolean;
+  onToggleActive: () => void;
 }
 
-export const FocusHUD: React.FC<FocusHUDProps> = ({ theme }) => {
+export const FocusHUD: React.FC<FocusHUDProps> = ({ theme, isActive, onToggleActive }) => {
   const [mode, setMode] = useState<FocusMode>('pomodoro');
   const [timeLeft, setTimeLeft] = useState<number>(25 * 60);
-  const [isActive, setIsActive] = useState<boolean>(false);
   const [completedSessions, setCompletedSessions] = useState<number>(0);
 
   const totalDuration = useRef<number>(25 * 60);
@@ -27,19 +28,12 @@ export const FocusHUD: React.FC<FocusHUDProps> = ({ theme }) => {
   const handleSelectMode = (newMode: FocusMode) => {
     audioEngine.playClick();
     setMode(newMode);
-    setIsActive(false);
     totalDuration.current = modeDurations[newMode];
     setTimeLeft(modeDurations[newMode]);
   };
 
-  const toggleTimer = () => {
-    audioEngine.playClick();
-    setIsActive(!isActive);
-  };
-
   const resetTimer = () => {
     audioEngine.playClick();
-    setIsActive(false);
     setTimeLeft(modeDurations[mode]);
   };
 
@@ -53,12 +47,11 @@ export const FocusHUD: React.FC<FocusHUDProps> = ({ theme }) => {
           setTimeLeft((prev) => {
             if (prev <= 1) {
               clearInterval(interval);
-              setIsActive(false);
               audioEngine.playChime();
               setCompletedSessions((c) => c + 1);
               confetti({
-                particleCount: 75,
-                spread: 60,
+                particleCount: 80,
+                spread: 70,
                 origin: { y: 0.6 }
               });
               return 0;
@@ -91,6 +84,9 @@ export const FocusHUD: React.FC<FocusHUDProps> = ({ theme }) => {
   }
 
   const getThemeButton = () => {
+    if (isActive) {
+      return 'bg-amber-500 hover:bg-amber-400 text-black font-bold shadow-lg shadow-amber-500/20';
+    }
     switch (theme) {
       case 'strelizia': return 'bg-[#ff2a5f] hover:bg-[#e60049] text-white shadow-glow-crimson';
       case 'neotokyo': return 'bg-[#00f0ff] hover:bg-[#00d0df] text-black font-bold shadow-glow-cyan';
@@ -110,23 +106,23 @@ export const FocusHUD: React.FC<FocusHUDProps> = ({ theme }) => {
   };
 
   return (
-    <div className="bg-[#10141e]/90 backdrop-blur border border-[#242d42] rounded-2xl p-3.5 md:p-4 shadow-xl">
+    <div className="bg-[#10141e]/90 backdrop-blur border border-[#242d42] rounded-2xl p-3 md:p-3.5 shadow-xl">
       <div className="flex flex-col md:flex-row items-center justify-between gap-3">
-        {/* Left: Modes Selector */}
+        {/* Left: Mode chips */}
         <div className="flex items-center gap-1 p-1 bg-[#090c13] rounded-xl border border-[#1f2638] w-full md:w-auto justify-between md:justify-start">
           {(
             [
-              { id: 'pomodoro', label: '25m' },
-              { id: 'deep', label: '50m' },
-              { id: 'shortBreak', label: '5m' },
-              { id: 'longBreak', label: '15m' },
-              { id: 'free', label: 'Flow' }
+              { id: 'pomodoro', label: '25m Focus' },
+              { id: 'deep', label: '50m Deep' },
+              { id: 'shortBreak', label: '5m Rest' },
+              { id: 'longBreak', label: '15m Rest' },
+              { id: 'free', label: 'Stopwatch' }
             ] as const
           ).map(({ id, label }) => (
             <button
               key={id}
               onClick={() => handleSelectMode(id)}
-              className={`px-3 py-1 rounded-lg font-mono text-xs border border-transparent transition-all ${getThemePill(
+              className={`px-2.5 py-1 rounded-lg font-mono text-[11px] border border-transparent transition-all ${getThemePill(
                 mode === id
               )}`}
             >
@@ -137,14 +133,14 @@ export const FocusHUD: React.FC<FocusHUDProps> = ({ theme }) => {
 
         {/* Center: Clock & Sync Rate */}
         <div className="flex items-center gap-4">
-          <div className="font-mono text-3xl md:text-4xl font-bold tracking-tight text-white">
+          <div className="font-mono text-3xl md:text-4xl font-bold tracking-tight text-white drop-shadow">
             {formatTime(timeLeft)}
           </div>
 
-          <div className="flex items-center gap-2 bg-[#090c13] border border-[#242d42] px-3 py-1.5 rounded-xl">
+          <div className="flex items-center gap-2 bg-[#090c13] border border-[#242d42] px-3 py-1 rounded-xl">
             <Flame className="w-3.5 h-3.5 text-[#ff2a5f]" />
             <div className="flex flex-col">
-              <div className="flex items-baseline gap-1 font-mono text-[10px] text-slate-400">
+              <div className="flex items-baseline gap-1 font-mono text-[9px] text-slate-400">
                 <span>SYNC</span>
                 <span className="text-emerald-400 font-bold text-xs">{syncRate.toFixed(1)}%</span>
               </div>
@@ -158,19 +154,19 @@ export const FocusHUD: React.FC<FocusHUDProps> = ({ theme }) => {
           </div>
         </div>
 
-        {/* Right: Actions */}
+        {/* Right: Master Engage/Pause Button + Reset */}
         <div className="flex items-center gap-2 w-full md:w-auto justify-end">
           <button
-            onClick={toggleTimer}
-            className={`flex-1 md:flex-initial px-5 py-2 rounded-xl font-display uppercase tracking-wider text-xs flex items-center justify-center gap-1.5 transition-transform active:scale-95 ${getThemeButton()}`}
+            onClick={onToggleActive}
+            className={`flex-1 md:flex-initial px-6 py-2 rounded-xl font-display uppercase tracking-wider text-xs flex items-center justify-center gap-2 transition-transform active:scale-95 ${getThemeButton()}`}
           >
             {isActive ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
-            <span>{isActive ? 'Pause' : 'Engage'}</span>
+            <span>{isActive ? 'Pause Deck' : 'Engage Deck'}</span>
           </button>
           <button
             onClick={resetTimer}
             title="Reset Timer"
-            className="p-2 rounded-xl bg-[#161b29] hover:bg-[#20273b] border border-[#242d42] text-slate-300 hover:text-white transition-all active:scale-95"
+            className="p-2 rounded-xl bg-[#161b29] hover:bg-[#20273b] border border-[#242d42] text-slate-400 hover:text-white transition-all active:scale-95"
           >
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
