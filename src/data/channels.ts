@@ -2,14 +2,44 @@ import { SoundChannel, SoundPreset } from '../types';
 
 export const INITIAL_CHANNELS: SoundChannel[] = [
   {
+    id: 'keys',
+    name: 'Lo-Fi Rhodes',
+    jpName: 'チルピアノ',
+    description: 'Dreamy Neo-Tokyo jazz chord progressions with warm tape wow and flutter',
+    icon: 'Music',
+    volume: 0.85,
+    isMuted: false,
+    color: '#ff007f'
+  },
+  {
     id: 'rain',
     name: 'Tokyo Rain',
     jpName: '雨音',
-    description: 'Soft pink noise rainfall with gentle droplet pings against window glass',
+    description: 'Soft warm rain shower with zero harsh static noise',
     icon: 'CloudRain',
-    volume: 0.65,
+    volume: 0.35,
     isMuted: false,
     color: '#00f0ff'
+  },
+  {
+    id: 'wind',
+    name: 'Cockpit Cabin',
+    jpName: '風と客室',
+    description: 'Atmospheric night wind and resonant 55Hz spacecraft cabin ambient hum',
+    icon: 'Wind',
+    volume: 0.2,
+    isMuted: false,
+    color: '#38bdf8'
+  },
+  {
+    id: 'binaural',
+    name: 'Alpha 216Hz',
+    jpName: '脳波シンク',
+    description: 'Pure 216Hz stereo sine wave with 10Hz binaural beat for deep cognitive flow',
+    icon: 'Activity',
+    volume: 0.25,
+    isMuted: false,
+    color: '#a855f7'
   },
   {
     id: 'vinyl',
@@ -18,38 +48,8 @@ export const INITIAL_CHANNELS: SoundChannel[] = [
     description: 'Warm analog turntable hum with subtle turntable surface texture',
     icon: 'Disc',
     volume: 0.2,
-    isMuted: true, // Muted by default so no unwanted crackle!
+    isMuted: true,
     color: '#ffb703'
-  },
-  {
-    id: 'wind',
-    name: 'Cockpit Cabin',
-    jpName: '風と客室',
-    description: 'Atmospheric night wind and resonant 55Hz spacecraft cabin ambient hum',
-    icon: 'Wind',
-    volume: 0.45,
-    isMuted: false,
-    color: '#38bdf8'
-  },
-  {
-    id: 'keys',
-    name: 'Lo-Fi Rhodes',
-    jpName: 'チルピアノ',
-    description: 'Dreamy Neo-Tokyo jazz chord progressions with tape wow and flutter vibrato',
-    icon: 'Music',
-    volume: 0.8,
-    isMuted: false,
-    color: '#ff007f'
-  },
-  {
-    id: 'binaural',
-    name: 'Alpha 216Hz',
-    jpName: '脳波シンク',
-    description: 'Pure 216Hz stereo sine wave with 10Hz binaural beat for deep cognitive flow',
-    icon: 'Activity',
-    volume: 0.45,
-    isMuted: false,
-    color: '#a855f7'
   },
   {
     id: 'clock',
@@ -108,15 +108,15 @@ export const PRESETS: SoundPreset[] = [
     id: 'midnight-shibuya',
     name: 'Midnight Shibuya',
     jpName: '雨の渋谷',
-    description: 'Melancholic Tokyo rain, soft cabin wind, and soulful lo-fi Rhodes chords',
+    description: 'Soulful lo-fi Rhodes chords with gentle distant rain and subtle cabin hum',
     icon: '🌧️',
     tag: 'Focus',
     volumes: {
-      rain: 0.75,
-      vinyl: 0.0, // Zero crackle by default!
-      wind: 0.35,
       keys: 0.85,
-      binaural: 0.3,
+      rain: 0.35,
+      wind: 0.2,
+      binaural: 0.2,
+      vinyl: 0.0,
       clock: 0.0,
       waves: 0.0,
       fire: 0.0,
@@ -132,31 +132,31 @@ export const PRESETS: SoundPreset[] = [
     icon: '🚀',
     tag: 'Focus',
     volumes: {
-      rain: 0.0,
-      vinyl: 0.0,
-      wind: 0.65,
       keys: 0.4,
-      binaural: 0.75,
+      rain: 0.0,
+      wind: 0.6,
+      binaural: 0.7,
+      vinyl: 0.0,
       clock: 0.0,
       waves: 0.0,
       fire: 0.0,
       cafe: 0.0,
-      aurora: 0.65
+      aurora: 0.6
     }
   },
   {
     id: 'cyber-cafe',
     name: 'Akihabara Cafe',
     jpName: '電脳喫茶',
-    description: 'Warm cafe murmur, gentle Rhodes chords, soft rain backdrop, and calm focus',
+    description: 'Warm cafe murmur, gentle Rhodes chords, and soft distant ambience',
     icon: '☕',
     tag: 'Chill',
     volumes: {
-      rain: 0.35,
-      vinyl: 0.1,
+      keys: 0.8,
+      rain: 0.2,
       wind: 0.1,
-      keys: 0.75,
-      binaural: 0.2,
+      binaural: 0.0,
+      vinyl: 0.0,
       clock: 0.0,
       waves: 0.0,
       fire: 0.0,
@@ -172,16 +172,16 @@ export const PRESETS: SoundPreset[] = [
     icon: '🧘',
     tag: 'Focus',
     volumes: {
-      rain: 0.1,
-      vinyl: 0.0,
-      wind: 0.4,
       keys: 0.3,
+      rain: 0.0,
+      wind: 0.35,
       binaural: 0.9,
+      vinyl: 0.0,
       clock: 0.0,
       waves: 0.0,
       fire: 0.0,
       cafe: 0.0,
-      aurora: 0.35
+      aurora: 0.3
     }
   },
   {
@@ -192,16 +192,16 @@ export const PRESETS: SoundPreset[] = [
     icon: '🔥',
     tag: 'Chill',
     volumes: {
+      keys: 0.6,
       rain: 0.0,
+      wind: 0.35,
+      binaural: 0.25,
       vinyl: 0.0,
-      wind: 0.45,
-      keys: 0.55,
-      binaural: 0.35,
       clock: 0.0,
       waves: 0.0,
-      fire: 0.75,
+      fire: 0.7,
       cafe: 0.0,
-      aurora: 0.35
+      aurora: 0.3
     }
   },
   {
@@ -212,32 +212,32 @@ export const PRESETS: SoundPreset[] = [
     icon: '🌊',
     tag: 'Chill',
     volumes: {
-      rain: 0.4,
+      keys: 0.7,
+      rain: 0.25,
+      wind: 0.2,
+      binaural: 0.2,
       vinyl: 0.0,
-      wind: 0.25,
-      keys: 0.65,
-      binaural: 0.3,
       clock: 0.0,
-      waves: 0.8,
+      waves: 0.75,
       fire: 0.0,
       cafe: 0.0,
-      aurora: 0.5
+      aurora: 0.45
     }
   },
   {
     id: 'late-night-code',
     name: 'Late Night Code',
     jpName: '深夜コーディング',
-    description: 'Steady mechanical tick, relaxing rain on glass, and lo-fi Rhodes chords',
+    description: 'Steady mechanical tick, relaxing rain, and lush lo-fi Rhodes chords',
     icon: '💻',
     tag: 'Focus',
     volumes: {
-      rain: 0.6,
-      vinyl: 0.0,
-      wind: 0.2,
       keys: 0.85,
-      binaural: 0.4,
-      clock: 0.4,
+      rain: 0.35,
+      wind: 0.15,
+      binaural: 0.3,
+      clock: 0.35,
+      vinyl: 0.0,
       waves: 0.0,
       fire: 0.0,
       cafe: 0.0,
@@ -252,14 +252,14 @@ export const PRESETS: SoundPreset[] = [
     icon: '⛩️',
     tag: 'Chill',
     volumes: {
-      rain: 0.75,
-      vinyl: 0.0,
-      wind: 0.25,
-      keys: 0.35,
-      binaural: 0.35,
+      keys: 0.4,
+      rain: 0.6,
+      wind: 0.2,
+      binaural: 0.25,
       clock: 0.0,
-      waves: 0.45,
-      fire: 0.45,
+      waves: 0.4,
+      fire: 0.4,
+      vinyl: 0.0,
       cafe: 0.0,
       aurora: 0.0
     }
@@ -272,16 +272,16 @@ export const PRESETS: SoundPreset[] = [
     icon: '🌸',
     tag: 'Sleep',
     volumes: {
-      rain: 0.5,
-      vinyl: 0.0,
-      wind: 0.35,
       keys: 0.25,
+      rain: 0.4,
+      wind: 0.3,
       binaural: 0.8,
       clock: 0.0,
       waves: 0.0,
-      fire: 0.6,
+      fire: 0.55,
       cafe: 0.0,
-      aurora: 0.4
+      vinyl: 0.0,
+      aurora: 0.35
     }
   },
   {
@@ -292,16 +292,16 @@ export const PRESETS: SoundPreset[] = [
     icon: '⚡',
     tag: 'Energy',
     volumes: {
+      keys: 0.75,
       rain: 0.0,
-      vinyl: 0.0,
-      wind: 0.65,
-      keys: 0.7,
-      binaural: 0.85,
-      clock: 0.5,
+      wind: 0.6,
+      binaural: 0.8,
+      clock: 0.45,
       waves: 0.0,
       fire: 0.0,
       cafe: 0.0,
-      aurora: 0.8
+      vinyl: 0.0,
+      aurora: 0.75
     }
   },
   {
@@ -312,15 +312,15 @@ export const PRESETS: SoundPreset[] = [
     icon: '📚',
     tag: 'Chill',
     volumes: {
-      rain: 0.7,
-      vinyl: 0.05,
-      wind: 0.15,
-      keys: 0.7,
+      keys: 0.75,
+      rain: 0.5,
+      wind: 0.1,
+      cafe: 0.5,
       binaural: 0.0,
       clock: 0.0,
       waves: 0.0,
       fire: 0.0,
-      cafe: 0.55,
+      vinyl: 0.0,
       aurora: 0.0
     }
   },
@@ -332,16 +332,16 @@ export const PRESETS: SoundPreset[] = [
     icon: '🛰️',
     tag: 'Focus',
     volumes: {
-      rain: 0.0,
-      vinyl: 0.0,
-      wind: 0.75,
       keys: 0.45,
-      binaural: 0.7,
-      clock: 0.35,
+      rain: 0.0,
+      wind: 0.7,
+      binaural: 0.65,
+      clock: 0.3,
       waves: 0.0,
       fire: 0.0,
       cafe: 0.0,
-      aurora: 0.75
+      vinyl: 0.0,
+      aurora: 0.7
     }
   }
 ];
