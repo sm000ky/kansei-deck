@@ -1,10 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Header } from './components/Header';
-import { VisualizerCanvas } from './components/VisualizerCanvas';
-import { FocusHUD } from './components/FocusHUD';
-import { PresetSelector } from './components/PresetSelector';
-import { SoundDeck } from './components/SoundDeck';
-import { Footer } from './components/Footer';
+import { ConsoleHeader } from './components/ConsoleHeader';
+import { MonitorDisplay } from './components/MonitorDisplay';
+import { MixerRack } from './components/MixerRack';
+import { MobileDeck } from './components/MobileDeck';
 import { ZenMode } from './components/ZenMode';
 import { VisualizerMode, DeckTheme, SoundChannel, SoundPreset, MasterEqProfile } from './types';
 import { INITIAL_CHANNELS, PRESETS } from './data/channels';
@@ -14,13 +12,12 @@ export const App: React.FC = () => {
   const [visualizerMode, setVisualizerMode] = useState<VisualizerMode>('bars');
   const [theme, setTheme] = useState<DeckTheme>('strelizia');
   const [crtEnabled, setCrtEnabled] = useState<boolean>(true);
-  const [isCompactVisualizer, setIsCompactVisualizer] = useState<boolean>(false);
   const [isZenMode, setIsZenMode] = useState<boolean>(false);
 
-  // Master Deck Playback State (Controls both Audio & Focus HUD)
+  // Master Playback State
   const [isPlaybackActive, setIsPlaybackActive] = useState<boolean>(false);
 
-  // Audio Channels state
+  // Channels state
   const [channels, setChannels] = useState<SoundChannel[]>(INITIAL_CHANNELS);
   const [masterVolume, setMasterVolume] = useState<number>(0.8);
   const [isMasterMuted, setIsMasterMuted] = useState<boolean>(false);
@@ -28,10 +25,8 @@ export const App: React.FC = () => {
   const [activePresetId, setActivePresetId] = useState<string | null>('midnight-shibuya');
   const [soloChannelId, setSoloChannelId] = useState<string | null>(null);
 
-  // Pre-solo saved state
   const preSoloState = useRef<SoundChannel[] | null>(null);
 
-  // Initialize and engage audio engine
   const ensureAudioStarted = async (forcePlay = false) => {
     await audioEngine.init();
     channels.forEach((ch) => {
@@ -46,7 +41,6 @@ export const App: React.FC = () => {
     }
   };
 
-  // Master Playback Toggle (Engage Deck / Pause Deck)
   const handleTogglePlayback = async () => {
     audioEngine.playClick();
     if (isPlaybackActive) {
@@ -57,7 +51,6 @@ export const App: React.FC = () => {
     }
   };
 
-  // Channel Volume Change
   const handleChannelVolumeChange = async (id: string, vol: number) => {
     await ensureAudioStarted(true);
     setActivePresetId(null);
@@ -73,7 +66,6 @@ export const App: React.FC = () => {
     );
   };
 
-  // Toggle Channel Mute
   const handleToggleChannelMute = async (id: string) => {
     await ensureAudioStarted(true);
     setActivePresetId(null);
@@ -89,13 +81,11 @@ export const App: React.FC = () => {
     );
   };
 
-  // Solo Channel Handler
   const handleSoloChannel = async (id: string) => {
     await ensureAudioStarted(true);
     setActivePresetId(null);
 
     if (soloChannelId === id) {
-      // Restore pre-solo state
       if (preSoloState.current) {
         setChannels(preSoloState.current);
         preSoloState.current.forEach((ch) => {
@@ -105,7 +95,6 @@ export const App: React.FC = () => {
       }
       setSoloChannelId(null);
     } else {
-      // Save current state and solo target channel
       preSoloState.current = [...channels];
       setSoloChannelId(id);
       setChannels((prev) =>
@@ -113,16 +102,12 @@ export const App: React.FC = () => {
           const isTarget = ch.id === id;
           const isMuted = !isTarget;
           audioEngine.setChannelVolume(ch.id, ch.volume, isMuted);
-          return {
-            ...ch,
-            isMuted
-          };
+          return { ...ch, isMuted };
         })
       );
     }
   };
 
-  // Master Volume Change
   const handleMasterVolumeChange = async (vol: number) => {
     await ensureAudioStarted();
     setMasterVolume(vol);
@@ -143,7 +128,6 @@ export const App: React.FC = () => {
     audioEngine.setMasterProfile(profile);
   };
 
-  // Select Preset
   const handleSelectPreset = async (preset: SoundPreset) => {
     await ensureAudioStarted(true);
     setActivePresetId(preset.id);
@@ -164,7 +148,6 @@ export const App: React.FC = () => {
     );
   };
 
-  // Randomize Mix
   const handleRandomizeMix = async () => {
     await ensureAudioStarted(true);
     setActivePresetId(null);
@@ -186,7 +169,6 @@ export const App: React.FC = () => {
     );
   };
 
-  // Silence All Channels
   const handleResetAll = async () => {
     await ensureAudioStarted();
     setActivePresetId(null);
@@ -201,7 +183,7 @@ export const App: React.FC = () => {
     );
   };
 
-  // Global Keyboard Shortcuts
+  // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -233,65 +215,86 @@ export const App: React.FC = () => {
   const activePreset = PRESETS.find((p) => p.id === activePresetId);
 
   return (
-    <div className={`min-h-screen bg-[#080a0f] text-slate-100 flex flex-col ${crtEnabled ? 'crt-overlay' : ''}`}>
-      <Header
-        visualizerMode={visualizerMode}
+    <div
+      className={`h-[100dvh] w-screen overflow-hidden bg-[#07090e] text-slate-100 flex flex-col select-none ${
+        crtEnabled ? 'crt-overlay' : ''
+      }`}
+    >
+      {/* Top Console Navigation Bar */}
+      <ConsoleHeader
         theme={theme}
-        crtEnabled={crtEnabled}
         isPlaying={isPlaybackActive}
-        onSelectVisualizerMode={setVisualizerMode}
+        masterVolume={masterVolume}
+        isMasterMuted={isMasterMuted}
+        masterProfile={masterProfile}
+        crtEnabled={crtEnabled}
+        onTogglePlayback={handleTogglePlayback}
+        onMasterVolumeChange={handleMasterVolumeChange}
+        onToggleMasterMute={handleToggleMasterMute}
+        onSelectMasterProfile={handleSelectMasterProfile}
         onSelectTheme={setTheme}
         onToggleCrt={() => setCrtEnabled(!crtEnabled)}
         onToggleZen={() => setIsZenMode(true)}
-        onTogglePlayback={handleTogglePlayback}
       />
 
-      <main className="flex-1 max-w-6xl w-full mx-auto px-3 md:px-4 py-4 flex flex-col gap-3.5">
-        {/* Visualizer Canvas */}
-        <VisualizerCanvas
-          mode={visualizerMode}
-          theme={theme}
-          isPlaying={isPlaybackActive}
-          isCompact={isCompactVisualizer}
-          onToggleCompact={() => setIsCompactVisualizer(!isCompactVisualizer)}
-        />
+      {/* Main Workstation Body (Zero page scroll, fits 100vh) */}
+      <main className="flex-1 min-h-0 p-2 md:p-3 flex flex-col md:flex-row gap-2.5 md:gap-3 overflow-hidden">
+        {/* Desktop View: Left Monitor + Right Mixer */}
+        <div className="hidden md:flex flex-1 min-h-0 gap-3 overflow-hidden">
+          <MonitorDisplay
+            visualizerMode={visualizerMode}
+            theme={theme}
+            isPlaying={isPlaybackActive}
+            activePresetId={activePresetId}
+            onSelectVisualizerMode={setVisualizerMode}
+            onSelectPreset={handleSelectPreset}
+          />
+          <MixerRack
+            channels={channels}
+            theme={theme}
+            soloChannelId={soloChannelId}
+            masterProfile={masterProfile}
+            onChannelVolumeChange={handleChannelVolumeChange}
+            onToggleChannelMute={handleToggleChannelMute}
+            onSoloChannel={handleSoloChannel}
+            onSelectMasterProfile={handleSelectMasterProfile}
+            onRandomizeMix={handleRandomizeMix}
+            onResetAll={handleResetAll}
+          />
+        </div>
 
-        {/* Focus HUD (Engage / Pause Deck) */}
-        <FocusHUD
-          theme={theme}
-          isActive={isPlaybackActive}
-          onToggleActive={handleTogglePlayback}
-        />
-
-        {/* 12 Atmospheric Presets */}
-        <PresetSelector
-          activePresetId={activePresetId}
-          theme={theme}
-          onSelectPreset={handleSelectPreset}
-        />
-
-        {/* 10 Sound Channels Deck */}
-        <SoundDeck
-          channels={channels}
-          masterVolume={masterVolume}
-          isMasterMuted={isMasterMuted}
-          theme={theme}
-          masterProfile={masterProfile}
-          soloChannelId={soloChannelId}
-          onChannelVolumeChange={handleChannelVolumeChange}
-          onToggleChannelMute={handleToggleChannelMute}
-          onSoloChannel={handleSoloChannel}
-          onMasterVolumeChange={handleMasterVolumeChange}
-          onToggleMasterMute={handleToggleMasterMute}
-          onSelectMasterProfile={handleSelectMasterProfile}
-          onRandomizeMix={handleRandomizeMix}
-          onResetAll={handleResetAll}
-        />
+        {/* Mobile View: Upper Monitor + Lower Tabbed Deck */}
+        <div className="flex md:hidden flex-1 min-h-0 flex-col gap-2 overflow-hidden">
+          <div className="h-[46%] shrink-0 flex flex-col overflow-hidden">
+            <MonitorDisplay
+              visualizerMode={visualizerMode}
+              theme={theme}
+              isPlaying={isPlaybackActive}
+              activePresetId={activePresetId}
+              onSelectVisualizerMode={setVisualizerMode}
+              onSelectPreset={handleSelectPreset}
+            />
+          </div>
+          <div className="h-[54%] min-h-0 flex flex-col overflow-hidden">
+            <MobileDeck
+              channels={channels}
+              theme={theme}
+              activePresetId={activePresetId}
+              soloChannelId={soloChannelId}
+              masterProfile={masterProfile}
+              onChannelVolumeChange={handleChannelVolumeChange}
+              onToggleChannelMute={handleToggleChannelMute}
+              onSoloChannel={handleSoloChannel}
+              onSelectMasterProfile={handleSelectMasterProfile}
+              onSelectPreset={handleSelectPreset}
+              onRandomizeMix={handleRandomizeMix}
+              onResetAll={handleResetAll}
+            />
+          </div>
+        </div>
       </main>
 
-      <Footer />
-
-      {/* Fullscreen Zen Mode */}
+      {/* Fullscreen Zen Mode Overlay */}
       {isZenMode && (
         <ZenMode
           theme={theme}
