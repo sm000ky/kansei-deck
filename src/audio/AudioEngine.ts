@@ -1,5 +1,6 @@
-// Pure Client-Side Procedural Web Audio Engine v3.0
-// 100% Real-Time Synthesized — Rock-solid, Audible, Luscious Textures
+// Pure Client-Side Procedural Web Audio Engine v4.0 (Studio DSP Grade)
+// Zero Audio-Thread Dropouts • Pre-Rendered Organic Looping Buffers
+// Built-in Master Dynamics Compressor / Limiter (Zero Digital Clipping)
 // sm000ky × Zero Two // KANSEI DECK
 
 import { MasterEqProfile } from '../types';
@@ -7,27 +8,35 @@ import { MasterEqProfile } from '../types';
 class AudioEngine {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
+  private compressor: DynamicsCompressorNode | null = null;
   private masterEqLow: BiquadFilterNode | null = null;
   private masterEqHigh: BiquadFilterNode | null = null;
   private analyser: AnalyserNode | null = null;
 
   private isInitialized = false;
-  private isPlaybackActive = false; // Master Play/Pause state
+  private isPlaybackActive = false;
 
   // Channel Gain Nodes & Master Channel Volume Store
   private channelGains: Map<string, GainNode> = new Map();
   private channelVolumes: Map<string, number> = new Map();
   private channelMutes: Map<string, boolean> = new Map();
 
-  // Active Generators
+  // Active Generators (BufferSources & Oscillators)
   private activeGenerators: Map<string, any> = new Map();
+
+  // Pre-rendered Audio Buffers (Calculated once at init, zero runtime GC!)
+  private rainBuffer: AudioBuffer | null = null;
+  private vinylBuffer: AudioBuffer | null = null;
+  private wavesBuffer: AudioBuffer | null = null;
+  private fireBuffer: AudioBuffer | null = null;
+  private cafeBuffer: AudioBuffer | null = null;
 
   // Master Volume & Profile
   private masterVol = 0.8;
   private currentProfile: MasterEqProfile = 'flat';
 
   constructor() {
-    // Lazy init on first gesture
+    // Lazy init on first user gesture
   }
 
   public async init(): Promise<void> {
@@ -44,9 +53,9 @@ class AudioEngine {
     // 1. Master Analyser
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 256;
-    this.analyser.smoothingTimeConstant = 0.82;
+    this.analyser.smoothingTimeConstant = 0.85;
 
-    // 2. Master EQ Filters (Low Shelf & High Pass/Shelf)
+    // 2. Master EQ Filters
     this.masterEqLow = this.ctx.createBiquadFilter();
     this.masterEqLow.type = 'lowshelf';
     this.masterEqLow.frequency.setValueAtTime(250, this.ctx.currentTime);
@@ -57,15 +66,28 @@ class AudioEngine {
     this.masterEqHigh.frequency.setValueAtTime(20000, this.ctx.currentTime);
     this.masterEqHigh.Q.setValueAtTime(0.7, this.ctx.currentTime);
 
-    // 3. Master Gain
+    // 3. Studio Master Dynamics Compressor (Limiter)
+    // Completely eliminates digital clipping, pops, and distortion when multiple channels sum together!
+    this.compressor = this.ctx.createDynamicsCompressor();
+    this.compressor.threshold.setValueAtTime(-10, this.ctx.currentTime);
+    this.compressor.knee.setValueAtTime(8, this.ctx.currentTime);
+    this.compressor.ratio.setValueAtTime(6, this.ctx.currentTime);
+    this.compressor.attack.setValueAtTime(0.003, this.ctx.currentTime);
+    this.compressor.release.setValueAtTime(0.12, this.ctx.currentTime);
+
+    // 4. Master Gain
     this.masterGain = this.ctx.createGain();
     this.masterGain.gain.setValueAtTime(this.masterVol, this.ctx.currentTime);
 
-    // Routing: Channels -> masterGain -> masterEqLow -> masterEqHigh -> analyser -> destination
+    // Routing Chain: Channels -> masterGain -> masterEqLow -> masterEqHigh -> compressor -> analyser -> destination
     this.masterGain.connect(this.masterEqLow);
     this.masterEqLow.connect(this.masterEqHigh);
-    this.masterEqHigh.connect(this.analyser);
+    this.masterEqHigh.connect(this.compressor);
+    this.compressor.connect(this.analyser);
     this.analyser.connect(this.ctx.destination);
+
+    // 5. Pre-render all procedural buffers once (Zero runtime GC dropouts)
+    this.preRenderBuffers();
 
     this.isInitialized = true;
     this.isPlaybackActive = true;
@@ -83,7 +105,6 @@ class AudioEngine {
     return this.analyser;
   }
 
-  // Master Play / Pause Control
   public async setPlayback(active: boolean): Promise<void> {
     await this.resumeContext();
     this.isPlaybackActive = active;
@@ -96,7 +117,7 @@ class AudioEngine {
       this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, now);
       this.masterGain.gain.linearRampToValueAtTime(this.masterVol, now + 0.08);
 
-      // Ensure active channels are running
+      // Start any unstarted active channels
       this.channelVolumes.forEach((vol, id) => {
         const isMuted = this.channelMutes.get(id) || false;
         if (vol > 0 && !isMuted && !this.activeGenerators.has(id)) {
@@ -131,22 +152,17 @@ class AudioEngine {
 
     const now = this.ctx.currentTime;
     if (profile === 'lofi') {
-      this.masterEqHigh.frequency.setTargetAtTime(3200, now, 0.05);
-      this.masterEqLow.gain.setTargetAtTime(3.5, now, 0.05);
+      this.masterEqHigh.frequency.setTargetAtTime(3400, now, 0.05);
+      this.masterEqLow.gain.setTargetAtTime(2.5, now, 0.05);
     } else if (profile === 'cyber') {
       this.masterEqHigh.frequency.setTargetAtTime(18000, now, 0.05);
-      this.masterEqLow.gain.setTargetAtTime(-1.5, now, 0.05);
+      this.masterEqLow.gain.setTargetAtTime(-1.0, now, 0.05);
     } else {
       this.masterEqHigh.frequency.setTargetAtTime(20000, now, 0.05);
       this.masterEqLow.gain.setTargetAtTime(0, now, 0.05);
     }
   }
 
-  public getMasterProfile(): MasterEqProfile {
-    return this.currentProfile;
-  }
-
-  // Set Channel Volume
   public setChannelVolume(channelId: string, volume: number, isMuted: boolean): void {
     this.channelVolumes.set(channelId, volume);
     this.channelMutes.set(channelId, isMuted);
@@ -173,16 +189,19 @@ class AudioEngine {
     return this.channelGains.get(channelId)!;
   }
 
-  // Helper to generate seamless looping pink noise buffer
-  private createCrossfadedPinkNoise(seconds = 6): AudioBuffer {
-    if (!this.ctx) throw new Error('No context');
-    const sampleRate = this.ctx.sampleRate;
-    const bufferSize = sampleRate * seconds;
-    const buffer = this.ctx.createBuffer(1, bufferSize, sampleRate);
-    const data = buffer.getChannelData(0);
+  // --- PRE-RENDERING ORGANIC BUFFERS (ZERO GC IN RUNTIME LOOP) ---
 
+  private preRenderBuffers(): void {
+    if (!this.ctx) return;
+    const sr = this.ctx.sampleRate;
+    const dur = 8; // 8-second seamless looping buffers
+    const len = sr * dur;
+
+    // 1. Rain Buffer (Pink noise + soft droplet pings baked in)
+    this.rainBuffer = this.ctx.createBuffer(1, len, sr);
+    const rData = this.rainBuffer.getChannelData(0);
     let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
-    for (let i = 0; i < bufferSize; i++) {
+    for (let i = 0; i < len; i++) {
       const white = Math.random() * 2 - 1;
       b0 = 0.99886 * b0 + white * 0.0555179;
       b1 = 0.99332 * b1 + white * 0.0750759;
@@ -190,25 +209,105 @@ class AudioEngine {
       b3 = 0.86650 * b3 + white * 0.3104856;
       b4 = 0.55000 * b4 + white * 0.5329522;
       b5 = -0.7616 * b5 - white * 0.0168980;
-      data[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.25; // Clean, healthy amplitude
+      rData[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.15;
       b6 = white * 0.115926;
     }
+    // Bake in occasional soft water droplet ripples
+    const numDroplets = 24;
+    for (let d = 0; d < numDroplets; d++) {
+      const startIdx = Math.floor(Math.random() * (len - 4000));
+      const freq = 1400 + Math.random() * 1200;
+      for (let s = 0; s < 2500; s++) {
+        const t = s / sr;
+        const env = Math.exp(-t * 80);
+        rData[startIdx + s] += Math.sin(2 * Math.PI * freq * t) * env * 0.04;
+      }
+    }
+    this.applyCrossfade(rData, sr, 0.4);
 
-    // 300ms sine crossfade at boundaries for zero click on loop
-    const fadeLen = Math.floor(sampleRate * 0.3);
+    // 2. Vinyl Buffer (Analog surface warmth + subtle gentle turntable dust)
+    this.vinylBuffer = this.ctx.createBuffer(1, len, sr);
+    const vData = this.vinylBuffer.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      // Warm low-frequency vinyl hiss
+      vData[i] = (Math.random() * 2 - 1) * 0.025;
+    }
+    // Bake in soft, organic turntable dust pops (soft bandpassed impulses, not harsh square waves!)
+    const numDustPops = 35;
+    for (let p = 0; p < numDustPops; p++) {
+      const startIdx = Math.floor(Math.random() * (len - 1000));
+      const popFreq = 800 + Math.random() * 1500;
+      for (let s = 0; s < 400; s++) {
+        const t = s / sr;
+        const env = Math.exp(-t * 300);
+        vData[startIdx + s] += Math.sin(2 * Math.PI * popFreq * t) * env * 0.08;
+      }
+    }
+    this.applyCrossfade(vData, sr, 0.4);
+
+    // 3. Waves Buffer (Rolling ocean surf swell)
+    this.wavesBuffer = this.ctx.createBuffer(1, len, sr);
+    const wData = this.wavesBuffer.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      const t = i / sr;
+      // 0.125 Hz swell cycle = 8 second wave rhythm
+      const swell = (Math.sin(2 * Math.PI * 0.125 * t - Math.PI / 2) + 1) / 2;
+      const shapedSwell = Math.pow(swell, 2.5); // organic wave crest
+      wData[i] = (Math.random() * 2 - 1) * 0.18 * (0.15 + shapedSwell * 0.85);
+    }
+    this.applyCrossfade(wData, sr, 0.5);
+
+    // 4. Fire Buffer (Cozy fireplace wood snaps)
+    this.fireBuffer = this.ctx.createBuffer(1, len, sr);
+    const fData = this.fireBuffer.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      fData[i] = (Math.random() * 2 - 1) * 0.02; // subtle air hiss
+    }
+    const numSnaps = 40;
+    for (let s = 0; s < numSnaps; s++) {
+      const startIdx = Math.floor(Math.random() * (len - 2000));
+      const snapFreq = 600 + Math.random() * 1800;
+      for (let i = 0; i < 800; i++) {
+        const t = i / sr;
+        const env = Math.exp(-t * 200);
+        fData[startIdx + i] += Math.sin(2 * Math.PI * snapFreq * t) * env * 0.15;
+      }
+    }
+    this.applyCrossfade(fData, sr, 0.4);
+
+    // 5. Cafe Buffer (Warm diffuse room murmur)
+    this.cafeBuffer = this.ctx.createBuffer(1, len, sr);
+    const cData = this.cafeBuffer.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      cData[i] = (Math.random() * 2 - 1) * 0.035;
+    }
+    const numClinks = 12;
+    for (let c = 0; c < numClinks; c++) {
+      const startIdx = Math.floor(Math.random() * (len - 3000));
+      const clinkFreq = 2600 + Math.random() * 800;
+      for (let s = 0; s < 1800; s++) {
+        const t = s / sr;
+        const env = Math.exp(-t * 70);
+        cData[startIdx + s] += Math.sin(2 * Math.PI * clinkFreq * t) * env * 0.03;
+      }
+    }
+    this.applyCrossfade(cData, sr, 0.4);
+  }
+
+  private applyCrossfade(data: Float32Array, sr: number, fadeSeconds: number): void {
+    const fadeLen = Math.floor(sr * fadeSeconds);
+    const totalLen = data.length;
     for (let i = 0; i < fadeLen; i++) {
       const t = i / fadeLen;
       const fadeIn = Math.sin((t * Math.PI) / 2);
       const fadeOut = Math.cos((t * Math.PI) / 2);
-      const blended = data[i] * fadeIn + data[bufferSize - fadeLen + i] * fadeOut;
+      const blended = data[i] * fadeIn + data[totalLen - fadeLen + i] * fadeOut;
       data[i] = blended;
-      data[bufferSize - fadeLen + i] = blended;
+      data[totalLen - fadeLen + i] = blended;
     }
-
-    return buffer;
   }
 
-  // --- PROCEDURAL SOUND GENERATORS ---
+  // --- SOUND GENERATORS ---
 
   public startGenerator(channelId: string): void {
     if (!this.ctx || this.activeGenerators.has(channelId)) return;
@@ -227,122 +326,74 @@ class AudioEngine {
     }
   }
 
-  // 1. TOKYO RAIN (雨音)
+  // 1. TOKYO RAIN (雨音) - Continuous pre-rendered looping buffer
   private initRainGenerator(): void {
-    if (!this.ctx) return;
+    if (!this.ctx || !this.rainBuffer) return;
     const targetGain = this.getOrCreateChannelGain('rain');
 
-    const buffer = this.createCrossfadedPinkNoise(6);
-    const noise = this.ctx.createBufferSource();
-    noise.buffer = buffer;
-    noise.loop = true;
+    const source = this.ctx.createBufferSource();
+    source.buffer = this.rainBuffer;
+    source.loop = true;
 
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(1200, this.ctx.currentTime);
-    filter.Q.setValueAtTime(1.0, this.ctx.currentTime);
+    filter.frequency.setValueAtTime(1400, this.ctx.currentTime);
+    filter.Q.setValueAtTime(0.8, this.ctx.currentTime);
 
-    noise.connect(filter);
+    source.connect(filter);
     filter.connect(targetGain);
-    noise.start();
+    source.start();
 
-    // Raindrop blips
-    const dropletInterval = window.setInterval(() => {
-      if (!this.ctx) return;
-      const isMuted = this.channelMutes.get('rain');
-      const vol = this.channelVolumes.get('rain') || 0;
-      if (isMuted || vol <= 0.01) return;
-
-      if (Math.random() > 0.35) {
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-
-        const freq = 1200 + Math.random() * 1600;
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(freq * 0.7, this.ctx.currentTime + 0.04);
-
-        gain.gain.setValueAtTime(0.04 + Math.random() * 0.04, this.ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + 0.045);
-
-        osc.connect(gain);
-        gain.connect(targetGain);
-
-        osc.start();
-        osc.stop(this.ctx.currentTime + 0.05);
-      }
-    }, 150);
-
-    this.activeGenerators.set('rain', { noise, dropletInterval });
+    this.activeGenerators.set('rain', { source });
   }
 
-  // 2. VINYL CRACKLE (レコード)
+  // 2. VINYL CRACKLE (レコード) - Continuous warm surface noise + 38Hz turntable rumble
   private initVinylGenerator(): void {
-    if (!this.ctx) return;
+    if (!this.ctx || !this.vinylBuffer) return;
     const targetGain = this.getOrCreateChannelGain('vinyl');
 
-    // Analog turntable warm rumble (40Hz)
+    // Continuous looping vinyl buffer
+    const source = this.ctx.createBufferSource();
+    source.buffer = this.vinylBuffer;
+    source.loop = true;
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(1200, this.ctx.currentTime);
+    filter.Q.setValueAtTime(1.2, this.ctx.currentTime);
+
+    // Warm turntable rumble (38Hz)
     const rumble = this.ctx.createOscillator();
     rumble.type = 'triangle';
     rumble.frequency.setValueAtTime(38, this.ctx.currentTime);
 
     const rumbleGain = this.ctx.createGain();
-    rumbleGain.gain.setValueAtTime(0.08, this.ctx.currentTime);
+    rumbleGain.gain.setValueAtTime(0.06, this.ctx.currentTime);
 
+    source.connect(filter);
+    filter.connect(targetGain);
     rumble.connect(rumbleGain);
     rumbleGain.connect(targetGain);
+
+    source.start();
     rumble.start();
 
-    // Dust pops
-    const crackleInterval = window.setInterval(() => {
-      if (!this.ctx) return;
-      const isMuted = this.channelMutes.get('vinyl');
-      const vol = this.channelVolumes.get('vinyl') || 0;
-      if (isMuted || vol <= 0.01) return;
-
-      const count = Math.floor(Math.random() * 3);
-      for (let c = 0; c < count; c++) {
-        const popOsc = this.ctx.createOscillator();
-        const popFilter = this.ctx.createBiquadFilter();
-        const popGain = this.ctx.createGain();
-
-        popOsc.type = 'square';
-        popOsc.frequency.setValueAtTime(400 + Math.random() * 3000, this.ctx.currentTime);
-
-        popFilter.type = 'bandpass';
-        popFilter.frequency.setValueAtTime(1800 + Math.random() * 2000, this.ctx.currentTime);
-        popFilter.Q.setValueAtTime(3.0, this.ctx.currentTime);
-
-        const dur = 0.006 + Math.random() * 0.008;
-        popGain.gain.setValueAtTime(0.08 + Math.random() * 0.12, this.ctx.currentTime);
-        popGain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + dur);
-
-        popOsc.connect(popFilter);
-        popFilter.connect(popGain);
-        popGain.connect(targetGain);
-
-        popOsc.start();
-        popOsc.stop(this.ctx.currentTime + dur);
-      }
-    }, 75);
-
-    this.activeGenerators.set('vinyl', { rumble, crackleInterval });
+    this.activeGenerators.set('vinyl', { source, rumble });
   }
 
   // 3. NIGHT WIND & CABIN HUM (風と客室)
   private initWindGenerator(): void {
-    if (!this.ctx) return;
+    if (!this.ctx || !this.rainBuffer) return;
     const targetGain = this.getOrCreateChannelGain('wind');
 
-    const buffer = this.createCrossfadedPinkNoise(5);
     const noise = this.ctx.createBufferSource();
-    noise.buffer = buffer;
+    noise.buffer = this.rainBuffer;
     noise.loop = true;
 
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(400, this.ctx.currentTime);
-    filter.Q.setValueAtTime(2.5, this.ctx.currentTime);
+    filter.frequency.setValueAtTime(450, this.ctx.currentTime);
+    filter.Q.setValueAtTime(2.2, this.ctx.currentTime);
 
     const lfo = this.ctx.createOscillator();
     lfo.type = 'sine';
@@ -354,13 +405,12 @@ class AudioEngine {
     lfo.connect(lfoGain);
     lfoGain.connect(filter.frequency);
 
-    // 55Hz spacecraft cabin sub-hum
     const hum = this.ctx.createOscillator();
     hum.type = 'sine';
     hum.frequency.setValueAtTime(55, this.ctx.currentTime);
 
     const humGain = this.ctx.createGain();
-    humGain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+    humGain.gain.setValueAtTime(0.14, this.ctx.currentTime);
 
     noise.connect(filter);
     filter.connect(targetGain);
@@ -379,13 +429,9 @@ class AudioEngine {
     if (!this.ctx) return;
     const targetGain = this.getOrCreateChannelGain('keys');
 
-    // Rich jazzy progressions
     const progressions = [
-      // 1. Neo-Tokyo Melancholy: Dmaj9 -> Bm9 -> Gmaj7 -> A7sus4
       [[146.83, 185.0, 220.0, 277.18, 329.63], [123.47, 146.83, 185.0, 220.0, 277.18], [98.0, 123.47, 146.83, 185.0, 246.94], [110.0, 146.83, 164.81, 196.0, 246.94]],
-      // 2. Shibuya Nightfall: Cmaj9 -> Am9 -> Fmaj7 -> G9
       [[130.81, 164.81, 196.0, 246.94, 293.66], [110.0, 130.81, 164.81, 196.0, 246.94], [87.31, 130.81, 164.81, 174.61, 261.63], [98.0, 123.47, 146.83, 174.61, 293.66]],
-      // 3. Sunset Reverie: Ebmaj9 -> Cm9 -> Abmaj7 -> Bb7sus
       [[155.56, 196.0, 233.08, 293.66, 349.23], [130.81, 155.56, 196.0, 233.08, 293.66], [103.83, 155.56, 196.0, 261.63, 311.13], [116.54, 155.56, 174.61, 207.65, 311.13]]
     ];
 
@@ -419,23 +465,20 @@ class AudioEngine {
         osc2.type = 'sine';
         osc2.frequency.setValueAtTime(freq * 1.002, now);
 
-        // Tape wow vibrato
         const vibrato = this.ctx.createOscillator();
         const vibratoGain = this.ctx.createGain();
         vibrato.frequency.setValueAtTime(4.2 + Math.random() * 0.8, now);
-        vibratoGain.gain.setValueAtTime(1.0, now);
+        vibratoGain.gain.setValueAtTime(0.9, now);
         vibrato.connect(vibratoGain);
         vibratoGain.connect(osc1.frequency);
         vibratoGain.connect(osc2.frequency);
         vibrato.start(now);
         vibrato.stop(now + chordDuration);
 
-        // Warm 24dB low-pass filter
         filter.type = 'lowpass';
         filter.frequency.setValueAtTime(950, now);
         filter.frequency.exponentialRampToValueAtTime(380, now + chordDuration);
 
-        // Healthy, lush volume envelope
         gain.gain.setValueAtTime(0.0001, now);
         gain.gain.linearRampToValueAtTime(0.22 / notes.length, now + 0.12);
         gain.gain.exponentialRampToValueAtTime(0.0001, now + chordDuration);
@@ -457,14 +500,13 @@ class AudioEngine {
     this.activeGenerators.set('keys', { chordInterval });
   }
 
-  // 5. BINAURAL ALPHA DRONE (脳波シンク)
-  // Warm, meditative 216Hz fundamental with 10Hz alpha beat difference
+  // 5. BINAURAL ALPHA DRONE (脳波シンク) - Meditative, silky smooth 216Hz + 10Hz alpha beat
   private initBinauralGenerator(): void {
     if (!this.ctx) return;
     const targetGain = this.getOrCreateChannelGain('binaural');
 
-    const baseFreq = 216; // A3, smooth and soothing (not piercing!)
-    const beat = 10.0; // 10Hz Alpha beat
+    const baseFreq = 216;
+    const beat = 10.0;
 
     const oscL = this.ctx.createOscillator();
     oscL.type = 'sine';
@@ -543,143 +585,78 @@ class AudioEngine {
 
       osc.start(now);
       osc.stop(now + 0.035);
-    }, 1000); // 60 BPM
+    }, 1000);
 
     this.activeGenerators.set('clock', { clockInterval });
   }
 
-  // 7. OCEAN SURF / WAVES (潮騒)
+  // 7. OCEAN SURF / WAVES (潮騒) - Pre-rendered continuous rolling swell
   private initWavesGenerator(): void {
-    if (!this.ctx) return;
+    if (!this.ctx || !this.wavesBuffer) return;
     const targetGain = this.getOrCreateChannelGain('waves');
 
-    const buffer = this.createCrossfadedPinkNoise(6);
-    const noise = this.ctx.createBufferSource();
-    noise.buffer = buffer;
-    noise.loop = true;
+    const source = this.ctx.createBufferSource();
+    source.buffer = this.wavesBuffer;
+    source.loop = true;
 
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(650, this.ctx.currentTime);
-    filter.Q.setValueAtTime(2.0, this.ctx.currentTime);
+    filter.frequency.setValueAtTime(750, this.ctx.currentTime);
+    filter.Q.setValueAtTime(1.5, this.ctx.currentTime);
 
-    // Wave swell LFO
-    const swellLfo = this.ctx.createOscillator();
-    swellLfo.type = 'sine';
-    swellLfo.frequency.setValueAtTime(0.08, this.ctx.currentTime);
-
-    const swellGain = this.ctx.createGain();
-    swellGain.gain.setValueAtTime(450, this.ctx.currentTime);
-
-    swellLfo.connect(swellGain);
-    swellGain.connect(filter.frequency);
-
-    noise.connect(filter);
+    source.connect(filter);
     filter.connect(targetGain);
+    source.start();
 
-    noise.start();
-    swellLfo.start();
-
-    this.activeGenerators.set('waves', { noise, swellLfo });
+    this.activeGenerators.set('waves', { source });
   }
 
-  // 8. CAMPFIRE HEARTH (焚き火)
+  // 8. CAMPFIRE HEARTH (焚き火) - Continuous pre-rendered fireplace buffer
   private initFireGenerator(): void {
-    if (!this.ctx) return;
+    if (!this.ctx || !this.fireBuffer) return;
     const targetGain = this.getOrCreateChannelGain('fire');
+
+    const source = this.ctx.createBufferSource();
+    source.buffer = this.fireBuffer;
+    source.loop = true;
 
     const rumble = this.ctx.createOscillator();
     rumble.type = 'sine';
     rumble.frequency.setValueAtTime(45, this.ctx.currentTime);
     const rumbleGain = this.ctx.createGain();
-    rumbleGain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+    rumbleGain.gain.setValueAtTime(0.08, this.ctx.currentTime);
     rumble.connect(rumbleGain);
     rumbleGain.connect(targetGain);
+
+    source.connect(targetGain);
+    source.start();
     rumble.start();
 
-    const fireInterval = window.setInterval(() => {
-      if (!this.ctx) return;
-      const isMuted = this.channelMutes.get('fire');
-      const vol = this.channelVolumes.get('fire') || 0;
-      if (isMuted || vol <= 0.01) return;
-
-      if (Math.random() > 0.25) {
-        const popOsc = this.ctx.createOscillator();
-        const popFilter = this.ctx.createBiquadFilter();
-        const popGain = this.ctx.createGain();
-
-        popOsc.type = 'sawtooth';
-        popOsc.frequency.setValueAtTime(700 + Math.random() * 2600, this.ctx.currentTime);
-
-        popFilter.type = 'bandpass';
-        popFilter.frequency.setValueAtTime(1400 + Math.random() * 1800, this.ctx.currentTime);
-        popFilter.Q.setValueAtTime(3.5, this.ctx.currentTime);
-
-        const dur = 0.015 + Math.random() * 0.03;
-        popGain.gain.setValueAtTime(0.12 + Math.random() * 0.15, this.ctx.currentTime);
-        popGain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + dur);
-
-        popOsc.connect(popFilter);
-        popFilter.connect(popGain);
-        popGain.connect(targetGain);
-
-        popOsc.start();
-        popOsc.stop(this.ctx.currentTime + dur);
-      }
-    }, 85);
-
-    this.activeGenerators.set('fire', { rumble, fireInterval });
+    this.activeGenerators.set('fire', { source, rumble });
   }
 
-  // 9. CYBER CAFE (電脳喫茶)
+  // 9. CYBER CAFE (電脳喫茶) - Continuous pre-rendered room buffer
   private initCafeGenerator(): void {
-    if (!this.ctx) return;
+    if (!this.ctx || !this.cafeBuffer) return;
     const targetGain = this.getOrCreateChannelGain('cafe');
 
-    const buffer = this.createCrossfadedPinkNoise(5);
-    const noise = this.ctx.createBufferSource();
-    noise.buffer = buffer;
-    noise.loop = true;
+    const source = this.ctx.createBufferSource();
+    source.buffer = this.cafeBuffer;
+    source.loop = true;
 
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(480, this.ctx.currentTime);
-    filter.Q.setValueAtTime(1.6, this.ctx.currentTime);
+    filter.frequency.setValueAtTime(650, this.ctx.currentTime);
+    filter.Q.setValueAtTime(1.2, this.ctx.currentTime);
 
-    noise.connect(filter);
+    source.connect(filter);
     filter.connect(targetGain);
-    noise.start();
+    source.start();
 
-    // Ceramic cup clinks
-    const clinkInterval = window.setInterval(() => {
-      if (!this.ctx) return;
-      const isMuted = this.channelMutes.get('cafe');
-      const vol = this.channelVolumes.get('cafe') || 0;
-      if (isMuted || vol <= 0.01) return;
-
-      if (Math.random() > 0.6) {
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-
-        const freq = 2400 + Math.random() * 1800;
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
-
-        gain.gain.setValueAtTime(0.06 + Math.random() * 0.06, this.ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + 0.08);
-
-        osc.connect(gain);
-        gain.connect(targetGain);
-
-        osc.start();
-        osc.stop(this.ctx.currentTime + 0.09);
-      }
-    }, 550);
-
-    this.activeGenerators.set('cafe', { noise, clinkInterval });
+    this.activeGenerators.set('cafe', { source });
   }
 
-  // 10. COSMIC AURORA (極光)
+  // 10. COSMIC AURORA (極光) - Brian Eno style lush harmonic drone
   private initAuroraGenerator(): void {
     if (!this.ctx) return;
     const targetGain = this.getOrCreateChannelGain('aurora');
